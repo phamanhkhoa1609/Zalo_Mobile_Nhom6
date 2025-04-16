@@ -8,30 +8,39 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import axios from 'axios';
+import { BASE_URL } from '../config';
 
 export default function ForgotPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSendOTP = () => {
+  const handleSendOTP = async () => {
     if (!email.trim()) {
       Alert.alert('Thiếu thông tin', 'Vui lòng nhập email đã đăng ký.');
       return;
     }
 
     setLoading(true);
+    try {
+      const res = await axios.post(`${BASE_URL}/api/users/send-reset-passwordOTP`, { email });
 
-    // Giả lập xử lý gửi OTP
-    setTimeout(() => {
-      console.log(`Email nhập: ${email}`);
-      Alert.alert('✅ Đã gửi OTP (giả lập)', 'Vui lòng kiểm tra email để lấy mã xác nhận.', [
-        {
-          text: 'Nhập mã',
-          onPress: () => navigation.navigate('ResetPassword', { email }),
-        },
-      ]);
+      if (res.data?.Status === 'Success' || res.data?.success) {
+        Alert.alert('✅ Đã gửi OTP', 'Vui lòng kiểm tra email để lấy mã xác nhận.', [
+          {
+            text: 'Nhập mã',
+            onPress: () => navigation.navigate('ResetPassword', { email }),
+          },
+        ]);
+      } else {
+        Alert.alert('Lỗi', res.data?.message || 'Không thể gửi mã xác nhận.');
+      }
+    } catch (err) {
+      console.log('❌ Lỗi gửi OTP:', err?.response?.data || err.message);
+      Alert.alert('Lỗi', err?.response?.data?.message || 'Không thể gửi mã OTP.');
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   return (
