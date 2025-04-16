@@ -1,42 +1,28 @@
-// ✅ Đây là phiên bản OTPScreen tối ưu (dùng config IP động)
-
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator
 } from 'react-native';
-import axios from 'axios';
-import { BASE_URL } from '../config';
 
 export default function OTPScreen({ route, navigation }) {
   const { email } = route.params;
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleVerify = async () => {
+  const handleVerify = () => {
     if (!otp) {
       Alert.alert('Thiếu mã', 'Vui lòng nhập mã xác nhận.');
       return;
     }
 
     setLoading(true);
-    try {
-      const res = await axios.post(`${BASE_URL}/api/users/verify`, {
-        email,
-        otp
-      });
 
-      if (res.data.success) {
-        Alert.alert('Xác nhận thành công', 'Bạn có thể tiếp tục.');
-        navigation.navigate('Login');
-      } else {
-        Alert.alert('Lỗi', res.data.message || 'Xác thực không thành công');
-      }
-    } catch (err) {
-      console.log('❌ Lỗi verify OTP:', err?.response?.data || err.message);
-      Alert.alert('Lỗi', err?.response?.data?.message || 'Không xác minh được mã OTP');
-    } finally {
+    
+    setTimeout(() => {
+      console.log(`OTP nhập: ${otp} - Email: ${email}`);
+      Alert.alert('Giả lập xác minh', 'Bạn đã nhập mã: ' + otp);
       setLoading(false);
-    }
+      navigation.navigate('Login'); // Chuyển màn hình để mô phỏng quá trình hoàn tất
+    }, 1500);
   };
 
   return (
