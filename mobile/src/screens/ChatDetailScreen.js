@@ -2,39 +2,31 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, Image, StyleSheet, ActivityIndicator
 } from 'react-native';
+import axios from 'axios';
 
 export default function ChatListScreen({ navigation }) {
   const [chatList, setChatList] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Giả lập loading rồi set dữ liệu giả
-    setTimeout(() => {
-      setChatList([
-        {
-          chatRoomId: '1',
-          name: 'Nguyễn Văn A',
-          photoURL: 'https://i.pravatar.cc/150?img=1',
-          lastMessage: { content: 'Chào bạn!' },
-          unreadCount: 2
-        },
-        {
-          chatRoomId: '2',
-          name: 'Trần Thị B',
-          photoURL: 'https://i.pravatar.cc/150?img=2',
-          lastMessage: { content: 'Ok, hẹn gặp sau.' },
-          unreadCount: 0
-        },
-        {
-          chatRoomId: '3',
-          name: 'Nhóm Lập Trình',
-          photoURL: 'https://i.pravatar.cc/150?img=3',
-          lastMessage: { content: 'Mọi người xem lại deadline nhé!' },
-          unreadCount: 5
+  const fetchChatList = async () => {
+    try {
+      const res = await axios.get('http://192.168.1.125:3000/api/info-chat-item', {
+        headers: {
+          // Gắn Authorization nếu có dùng JWT
+          // Authorization: Bearer ${token}
         }
-      ]);
+      });
+
+      setChatList(res.data || []);
+    } catch (err) {
+      console.log('Lỗi load chat list:', err.message);
+    } finally {
       setLoading(false);
-    }, 1000); // giả lập 1s loading
+    }
+  };
+
+  useEffect(() => {
+    fetchChatList();
   }, []);
 
   const renderItem = ({ item }) => (
