@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config';
 
+// Cấu hình axios
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
@@ -41,6 +42,7 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
   const getCurrentUser = async () => {
     try {
       const userId = await AsyncStorage.getItem('userId');
+      console.log('👤 Current userId:', userId);
       setCurrentUserId(userId);
       fetchGroupInfo(userId);
     } catch (err) {
@@ -53,26 +55,49 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
     try {
       setLoading(true);
       const token = await AsyncStorage.getItem('token');
-      if (!token) return Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+      if (!token) {
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+        return;
+      }
 
       axiosInstance.defaults.headers.common['Authorization'] = token;
 
+      // Lấy thông tin nhóm từ info-chat-item
+      console.log('🔍 Đang lấy thông tin chat item:', chatRoomId);
       const chatResponse = await axiosInstance.get('/api/info-chat-item');
-      const chatItem = (chatResponse.data?.data || []).find(item => item.idChatRoom === chatRoomId);
-      if (!chatItem) throw new Error('Không tìm thấy thông tin nhóm chat');
+      
+      console.log('📦 Chat items:', chatResponse.data);
+      
+      const chatItem = (chatResponse.data?.data || [])
+        .find(item => item.idChatRoom === chatRoomId);
 
+      if (!chatItem) {
+        throw new Error('Không tìm thấy thông tin nhóm chat');
+      }
+
+      console.log('📦 Chat item:', chatItem);
+
+      // Lấy thông tin chi tiết nhóm
+      console.log('🔍 Đang lấy thông tin chi tiết nhóm:', chatRoomId);
       const groupResponse = await axiosInstance.get(`/api/info-user/${chatRoomId}`);
+      
+      console.log('📦 Group info:', groupResponse.data);
+
       const groupData = groupResponse.data?.data || groupResponse.data;
-      if (!groupData) throw new Error('Không tìm thấy thông tin nhóm');
+      if (!groupData) {
+        throw new Error('Không tìm thấy thông tin nhóm');
+      }
 
       setGroupInfo(groupData);
 
-      const isUserAdmin = (groupData.members || []).some(member =>
+      // Xác định quyền admin
+      const isUserAdmin = (groupData.members || []).some(member => 
         member.userId === userId && (member.roles || []).includes('ADMIN')
       );
       const isUserOwner = groupData.ownerId === userId;
       setIsAdmin(isUserAdmin || isUserOwner);
 
+      // Lấy thông tin chi tiết của từng thành viên
       const memberPromises = (groupData.members || []).map(async member => {
         try {
           const userResponse = await axiosInstance.get(`/api/user/${member.userId}`);
@@ -87,6 +112,7 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
             addedAt: member.addAt
           };
         } catch (err) {
+          console.log(`❌ Lỗi lấy thông tin user ${member.userId}:`, err);
           return {
             _id: member.userId,
             displayName: 'Không tên',
@@ -100,9 +126,15 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
       });
 
       const membersWithDetails = await Promise.all(memberPromises);
+      console.log('👥 Members with details:', membersWithDetails);
       setMembers(membersWithDetails);
+
     } catch (err) {
       console.log('❌ Lỗi lấy thông tin nhóm:', err);
+      if (err.response) {
+        console.log('❌ Response status:', err.response.status);
+        console.log('❌ Response data:', err.response.data);
+      }
       Alert.alert('Lỗi', 'Không thể lấy thông tin nhóm');
     } finally {
       setLoading(false);
@@ -112,9 +144,14 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
   const handleKickMember = async (memberId) => {
     try {
       const token = await AsyncStorage.getItem('token');
-      if (!token) return Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+      if (!token) {
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+        return;
+      }
 
-      await axiosInstance.post(`/api/groups/${chatRoomId}/kick-member`, { memberId });
+      await axiosInstance.post(`/api/groups/${chatRoomId}/kick-member`, {
+        memberId
+      });
 
       setMembers(prev => prev.filter(m => m._id !== memberId));
       Alert.alert('Thành công', 'Đã xóa thành viên khỏi nhóm');
@@ -127,51 +164,41 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
   const handleSetAdmin = async (memberId) => {
     try {
       const token = await AsyncStorage.getItem('token');
-      if (!token) return Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+      if (!token) {
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+        return;
+      }
 
-      await axiosInstance.post(`/api/groups/${chatRoomId}/set-admin`, { memberId });
+      await axiosInstance.post(`/api/groups/${chatRoomId}/set-admin`, {
+        memberId
+      });
 
-      setMembers(prev => prev.map(member =>
-        member._id === memberId ? { ...member, isAdmin: true } : member
+      setMembers(prev => prev.map(member => 
+        member._id === memberId 
+          ? { ...member, isAdmin: true }
+          : member
       ));
       Alert.alert('Thành công', 'Đã đặt làm quản trị viên');
     } catch (err) {
-      console.log('❌ Lỗi khi đặt admin:', err);
+      console.log('❌ Lỗi khi đặt quản trị viên:', err);
       Alert.alert('Lỗi', 'Không thể đặt làm quản trị viên');
-    }
-  };
-
-  const handleRemoveAdmin = async (memberId) => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      if (!token) return Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
-
-      await axiosInstance.post(`/api/groups/${chatRoomId}/remove-admin`, { memberId });
-
-      setMembers(prev => prev.map(member =>
-        member._id === memberId ? { ...member, isAdmin: false } : member
-      ));
-      Alert.alert('Thành công', 'Đã gỡ quyền quản trị viên');
-    } catch (err) {
-      console.log('❌ Lỗi khi gỡ quyền admin:', err);
-      Alert.alert('Lỗi', 'Không thể gỡ quyền quản trị viên');
     }
   };
 
   const renderMemberItem = ({ item }) => (
     <View style={styles.memberItem}>
       <View style={styles.memberInfo}>
-        <Image source={{ uri: item.photoURL }} style={styles.memberAvatar} />
+        <Image
+          source={{ uri: item.photoURL }}
+          style={styles.memberAvatar}
+        />
         <View style={styles.memberTextInfo}>
-          <Text style={styles.memberName}>{item.displayName}</Text>
+          <Text style={styles.memberName}>
+            {item.displayName}
+          </Text>
           <Text style={[styles.memberRole, item.isOwner && styles.ownerRole]}>
             {item.isOwner ? 'Người tạo nhóm' : (item.isAdmin ? 'Quản trị viên' : 'Thành viên')}
           </Text>
-          {item.addedBy && (
-            <Text style={styles.addedInfo}>
-              Thêm bởi: {item.addedBy || 'Không rõ'} | {new Date(item.addedAt).toLocaleString()}
-            </Text>
-          )}
         </View>
       </View>
       {isAdmin && !item.isOwner && item._id !== currentUserId && (
@@ -182,14 +209,7 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
           >
             <Text style={styles.actionButtonText}>KICK</Text>
           </TouchableOpacity>
-          {item.isAdmin ? (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.kickButton]}
-              onPress={() => handleRemoveAdmin(item._id)}
-            >
-              <Text style={styles.actionButtonText}>GỠ ADMIN</Text>
-            </TouchableOpacity>
-          ) : (
+          {!item.isAdmin && (
             <TouchableOpacity
               style={[styles.actionButton, styles.adminButton]}
               onPress={() => handleSetAdmin(item._id)}
@@ -203,15 +223,22 @@ export default function GroupMemberManagement({ visible, onClose, chatRoomId }) 
   );
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose}>
             <Text style={styles.closeButton}>✕</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>{groupInfo?.name || 'Thành viên nhóm'}</Text>
+          <Text style={styles.title}>
+            {groupInfo?.name || 'Thành viên nhóm'}
+          </Text>
           <View style={{ width: 30 }} />
         </View>
+
         {loading ? (
           <ActivityIndicator size="large" color="#0068ff" style={styles.loading} />
         ) : (
@@ -286,14 +313,6 @@ const styles = StyleSheet.create({
     color: '#666',
     marginTop: 2,
   },
-  ownerRole: {
-    color: '#ff6b6b',
-    fontWeight: '600'
-  },
-  addedInfo: {
-    fontSize: 12,
-    color: '#999',
-  },
   actionButtons: {
     flexDirection: 'row',
     gap: 8,
@@ -316,4 +335,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-});
+  ownerRole: {
+    color: '#ff6b6b',
+    fontWeight: '600'
+  },
+}); 
