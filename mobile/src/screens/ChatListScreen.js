@@ -9,7 +9,8 @@ import axios from 'axios';
 import { BASE_URL } from '../config';
 import GroupMemberManagement from './GroupMemberManagement';
 import Footer from './Footer';
-
+import io from 'socket.io-client';
+let socket;
 export default function ChatListScreen({ navigation }) {
   const [chatList, setChatList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,11 +23,42 @@ export default function ChatListScreen({ navigation }) {
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [showMemberModal, setShowMemberModal] = useState(false);
   const [selectedChatRoom, setSelectedChatRoom] = useState(null);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
+  const [showAddFriendModal, setShowAddFriendModal] = useState(false);
+  const [friendSearchValue, setFriendSearchValue] = useState('');
+  const [foundUser, setFoundUser] = useState(null);
+  const [addFriendLoading, setAddFriendLoading] = useState(false);
 
-  useEffect(() => {
+ // ...existing code...
+useEffect(() => {
+  fetchChatList();
+  fetchFriends();
+  socket = io(BASE_URL, { transports: ['websocket'] });
+
+  AsyncStorage.getItem('token').then(token => {
+    if (token) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      socket.emit('setup', JSON.stringify(payload.id));
+    }
+  });
+
+  // Lắng nghe nhiều sự kiện
+  socket.on('message', (data) => {
+    console.log('📥 Nhận được message:', data);
     fetchChatList();
-    fetchFriends();
-  }, []);
+  });
+  socket.on('new_message', (data) => {
+    console.log('📥 Nhận được new_message:', data);
+    fetchChatList();
+  });
+
+  socket.on('connect', () => console.log('✅ Socket connected!'));
+  socket.on('disconnect', () => console.log('❌ Socket disconnected!'));
+
+  return () => {
+    socket?.disconnect();
+  };
+}, []);
 
   const fetchChatList = async () => {
     try {
@@ -159,7 +191,7 @@ export default function ChatListScreen({ navigation }) {
       >
         <View style={styles.friendInfo}>
           <Image
-            source={{ uri: item.photoURL || item.avatar || 'https://i.pravatar.cc/100' }}
+            source={item.photoURL ? { uri: item.photoURL } : require('../assets/icons8-account-48.png')}
             style={styles.friendAvatar}
           />
           <View style={styles.friendTextInfo}>
@@ -207,7 +239,7 @@ export default function ChatListScreen({ navigation }) {
         <View style={styles.row}>
           <View style={styles.avatarContainer}>
             <Image 
-              source={{ uri: item.photoURL || 'https://i.pravatar.cc/100' }} 
+              source={item.photoURL ? { uri: item.photoURL } : require('../assets/icons8-account-48.png')}
               style={styles.avatar}
             />
             {item.isGroup && (
@@ -239,6 +271,105 @@ export default function ChatListScreen({ navigation }) {
     );
   };
 
+  const handleSearchFriend = async () => {
+    if (!friendSearchValue.trim()) {
+      Alert.alert('Thông báo', 'Vui lòng nhập số điện thoại hoặc ID để tìm kiếm.');
+      return;
+    }
+    setAddFriendLoading(true);
+    setFoundUser(null);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+        setAddFriendLoading(false);
+        return;
+      }
+      console.log('🔍 Searching for friend with value:', friendSearchValue);
+      // Gửi đúng trường searchTerm
+      const response = await axios.post(`${BASE_URL}/api/search-user`, 
+        { searchTerm: friendSearchValue.trim() },
+        {
+          headers: { 
+            'Authorization': token,
+            'Content-Type': 'application/json',
+          }
+        }
+      );
+
+      console.log('✅ Search response:', response.data);
+
+      if (response.data && response.data.data) {
+        setFoundUser(response.data.data);
+      } else {
+        Alert.alert('Không tìm thấy', 'Không tìm thấy người dùng với thông tin đã nhập.');
+        setFoundUser(null);
+      }
+
+    } catch (err) {
+      console.log('❌ Search friend error:', err);
+      Alert.alert('Lỗi', err?.response?.data?.message || 'Có lỗi xảy ra khi tìm kiếm.');
+      setFoundUser(null);
+    } finally {
+      setAddFriendLoading(false);
+    }
+  };
+
+  // ...existing code...
+const handleSendFriendRequest = async () => {
+  if (!foundUser || !foundUser._id) {
+    Alert.alert('Lỗi', 'Không có thông tin người dùng để gửi lời mời.');
+    return;
+  }
+  setAddFriendLoading(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
+      setAddFriendLoading(false);
+      return;
+    }
+    // Không cho gửi lời mời cho chính mình
+    const myId = await AsyncStorage.getItem('userId');
+    if (myId && foundUser._id === myId) {
+      Alert.alert('Lỗi', 'Bạn không thể gửi lời mời kết bạn cho chính mình.');
+      setAddFriendLoading(false);
+      return;
+    }
+    // Gửi đúng format mà BE yêu cầu
+    const response = await axios.post(`${BASE_URL}/api/add-friend`, 
+      { userInfo: { _id: foundUser._id } },
+      {
+        headers: { 
+          'Authorization': token,
+          'Content-Type': 'application/json',
+        }
+      }
+    );
+
+    if (response.data && (response.data.message === 'Friend request sent' || response.data.success)) {
+      Alert.alert('Thành công', 'Đã gửi lời mời kết bạn!');
+      setShowAddFriendModal(false);
+      setFriendSearchValue('');
+      setFoundUser(null);
+    } else if (response.data && response.data.message) {
+      Alert.alert('Thông báo', response.data.message);
+      if (response.data.message.toLowerCase().includes('đã gửi') || response.data.message.toLowerCase().includes('already')) {
+        setFoundUser(null);
+      }
+    } else {
+      Alert.alert('Lỗi', 'Không gửi được lời mời kết bạn.');
+    }
+
+  } catch (err) {
+    console.log('❌ Send friend request error:', err);
+    Alert.alert('Lỗi', err?.response?.data?.message || 'Có lỗi xảy ra khi gửi lời mời kết bạn.');
+    setFoundUser(null);
+  } finally {
+    setAddFriendLoading(false);
+  }
+};
+
   const filteredFriends = friends.filter(friend => {
     const searchTerm = memberSearch.toLowerCase();
     return (
@@ -256,7 +387,7 @@ export default function ChatListScreen({ navigation }) {
           value={search}
           onChangeText={setSearch}
         />
-        <TouchableOpacity onPress={() => setGroupModalVisible(true)} style={styles.createGroupBtn}>
+        <TouchableOpacity onPress={() => setShowOptionsMenu(true)} style={styles.createGroupBtn}>
           <Text style={{ fontSize: 20, color: '#fff' }}>➕</Text>
         </TouchableOpacity>
       </View>
@@ -272,6 +403,37 @@ export default function ChatListScreen({ navigation }) {
         />
       )}
 
+      {/* Options Menu Modal */}
+      <Modal visible={showOptionsMenu} animationType="slide" transparent={true}>
+        <TouchableOpacity 
+          style={styles.overlay}
+          activeOpacity={1}
+          onPress={() => setShowOptionsMenu(false)}
+        >
+          <View style={styles.optionsMenu}>
+            <TouchableOpacity 
+              style={styles.optionButton}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                setShowAddFriendModal(true);
+              }}
+            >
+              <Text style={styles.optionText}>Thêm bạn</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.optionButton}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                setGroupModalVisible(true);
+              }}
+            >
+              <Text style={styles.optionText}>Tạo nhóm</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Create Group Modal */}
       <Modal visible={groupModalVisible} animationType="slide">
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -335,6 +497,81 @@ export default function ChatListScreen({ navigation }) {
               <Text style={[styles.btnText, { color: '#666' }]}>Hủy</Text>
             </TouchableOpacity>
           </View>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Add Friend Modal (Placeholder) */}
+      <Modal visible={showAddFriendModal} animationType="slide">
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => {
+               setShowAddFriendModal(false);
+               setFriendSearchValue('');
+               setFoundUser(null);
+            }}>
+              <Text style={styles.modalCloseBtn}>✕</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Thêm bạn mới</Text>
+            <View style={{ width: 30 }} />
+          </View>
+
+          <View style={styles.searchRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, margin: 0 }]}
+              placeholder="Nhập số điện thoại"
+              keyboardType="phone-pad"
+              value={friendSearchValue}
+              onChangeText={setFriendSearchValue}
+              onSubmitEditing={handleSearchFriend}
+              returnKeyType="search"
+            />
+            <TouchableOpacity 
+              style={styles.searchButton}
+              onPress={handleSearchFriend}
+              disabled={addFriendLoading}
+            >
+              {addFriendLoading ? (
+                 <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                 <Text style={styles.searchButtonText}>Tìm</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {foundUser && (
+            <View style={styles.foundUserContainer}>
+              <Image 
+                source={{ uri: foundUser.photoURL || foundUser.avatar || 'https://i.pravatar.cc/100' }}
+                style={styles.foundUserAvatar}
+              />
+              <View style={styles.foundUserInfo}>
+                <Text style={styles.foundUserName}>
+                  {foundUser.displayName || foundUser.name || foundUser.username || 'Không tên'}
+                </Text>
+                {(foundUser.email || foundUser.mail) && (
+                  <Text style={styles.foundUserDetail}>{foundUser.email || foundUser.mail}</Text>
+                )}
+                 {(foundUser.phone || foundUser.phoneNumber) && (
+                  <Text style={styles.foundUserDetail}>{foundUser.phone || foundUser.phoneNumber}</Text>
+                )}
+              </View>
+            </View>
+          )}
+
+          {foundUser && (
+            <TouchableOpacity 
+              style={[styles.createBtn, { marginHorizontal: 16, marginTop: 10 }]}
+              onPress={handleSendFriendRequest}
+               disabled={addFriendLoading}
+            >
+               {addFriendLoading ? (
+                 <ActivityIndicator size="small" color="#fff" />
+               ) : (
+                 <Text style={styles.btnText}>Gửi lời mời kết bạn</Text>
+               )}
+            </TouchableOpacity>
+          )}
+
         </SafeAreaView>
       </Modal>
 
@@ -592,5 +829,75 @@ const styles = StyleSheet.create({
   },
   editButtonText: {
     fontSize: 18,
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  optionsMenu: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 90 : 60,
+    right: 10,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 5,
+    width: 150,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  optionButton: {
+    padding: 10,
+  },
+  optionText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  searchButton: {
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    padding: 12,
+    marginLeft: 8,
+    height: 48,
+    justifyContent: 'center',
+  },
+  searchButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  foundUserContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  foundUserAvatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  foundUserInfo: {
+    flex: 1,
+  },
+  foundUserName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  foundUserDetail: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
   },
 });
