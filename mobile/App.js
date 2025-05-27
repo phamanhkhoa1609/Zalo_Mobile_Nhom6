@@ -1,22 +1,37 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import LoginScreen from './src/screens/LoginScreen';
+import { createStackNavigator } from '@react-navigation/stack';
+import { StatusBar } from 'expo-status-bar';
 
-const Stack = createNativeStackNavigator();
+import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import OTPScreen from './screens/OTPScreen';
+import ResetPasswordScreen from './screens/ResetPasswordScreen';
+import ChatListScreen from './screens/ChatListScreen';
+import OnlineChatScreen from './screens/OnlineChatScreen';
+import ChatDetailScreen from './screens/ChatDetailScreen';
+import Profile from './screens/Profile'
+import FriendListScreen from './screens/FriendListScreen';
 
-const App = () => {
+const Stack = createStackNavigator();
+
+export default function App() {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Login">
-        <Stack.Screen 
-          name="Login" 
-          component={LoginScreen}
-          options={{ headerShown: false }}
-        />
+      <StatusBar style="auto" />
+      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Register" component={RegisterScreen} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+        <Stack.Screen name="OTPScreen" component={OTPScreen} />
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        <Stack.Screen name="ChatList" component={ChatListScreen} />
+        <Stack.Screen name="OnlineChat" component={OnlineChatScreen} />
+        <Stack.Screen name="Profile" component={Profile} />
+        <Stack.Screen name="FriendListScreen" component={FriendListScreen}/>
+        { <Stack.Screen name="ChatDetail" component={ChatDetailScreen} /> }
       </Stack.Navigator>
     </NavigationContainer>
   );
-};
-
-export default App;
+}
