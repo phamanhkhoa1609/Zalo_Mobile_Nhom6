@@ -31,6 +31,7 @@ export default function OnlineChatScreen({ route, navigation }) {
         });
         const data = res.data?.data || [];
         setMessages(data);
+        console.log('Messages from API:', data);
 
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserId(payload.id);
@@ -148,20 +149,24 @@ export default function OnlineChatScreen({ route, navigation }) {
     }
   };
 
-  const handleCall = async (type = 'video') => {
-    try {
-      const token = await AsyncStorage.getItem('token');
-      const res = await axios.post(`${BASE_URL}/api/create-call-room`, {}, {
-        headers: { Authorization: token }
-      });
-      const url = res.data?.url;
-      if (url) {
-        Linking.openURL(url);
-      }
-    } catch (err) {
-      Alert.alert('Lỗi', 'Không tạo được cuộc gọi: ' + err.message);
+  const handleCall = async () => {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const res = await axios.post(`${BASE_URL}/api/create-call-room`, {}, {
+      headers: { Authorization: token }
+    });
+    const url = res.data?.url;
+    const meetingId = url.split('/').pop(); // lấy phần cuối URL
+
+    if (meetingId) {
+      navigation.navigate('CallScreen', { meetingId });
     }
-  };
+  } catch (err) {
+    Alert.alert('Lỗi', 'Không tạo được cuộc gọi: ' + err.message);
+  }
+};
+
+
 
   const renderItem = ({ item }) => {
     const isSent = item.senderId === userId || item.isSent;
@@ -169,7 +174,7 @@ export default function OnlineChatScreen({ route, navigation }) {
       <View style={[styles.messageBlock, isSent ? styles.mine : styles.other]}>
         {!isSent && <Text style={styles.senderName}>{item.senderName}</Text>}
 
-        {item.type === 'text' && <Text style={styles.messageText}>{item.content}</Text>}
+        {(item.type === 'text' || item.type === '') && <Text style={styles.messageText}>{item.content}</Text>}
         {item.type === 'image' && <Image source={{ uri: item.media?.url }} style={styles.image} />}
         {item.type === 'audio' && (
           <TouchableOpacity onPress={() => playAudio(item.media?.url)}>
