@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  SafeAreaView, Platform, Image, FlatList, ActivityIndicator, Alert
+  SafeAreaView, Image, FlatList, ActivityIndicator, Alert
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config';
+import Footer from './Footer';
 
 export default function FriendListRequest({ navigation }) {
   const [activeTab, setActiveTab] = useState('received');
@@ -24,13 +25,11 @@ export default function FriendListRequest({ navigation }) {
           return;
         }
 
-        // Lời mời đã nhận
         const receivedRes = await axios.get(`${BASE_URL}/api/getAllFriendRequest`, {
           headers: { Authorization: token }
         });
         setReceivedRequests(receivedRes.data?.data || []);
 
-        // Lời mời đã gửi (dùng đúng API đã có trong BE)
         const sentRes = await axios.get(`${BASE_URL}/api/getAllCancelFriendRequest`, {
           headers: { Authorization: token }
         });
@@ -50,10 +49,6 @@ export default function FriendListRequest({ navigation }) {
   const handleCancelRequest = async (requestId) => {
     try {
       const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
-        return;
-      }
       await axios.post(`${BASE_URL}/api/cancel-friend-request`, { requestId }, {
         headers: { Authorization: token }
       });
@@ -67,10 +62,6 @@ export default function FriendListRequest({ navigation }) {
   const handleAcceptRequest = async (senderId) => {
     try {
       const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        Alert.alert('Lỗi', 'Vui lòng đăng nhập lại');
-        return;
-      }
       await axios.post(`${BASE_URL}/api/accept-friend`, { senderId }, {
         headers: { Authorization: token }
       });
@@ -82,39 +73,22 @@ export default function FriendListRequest({ navigation }) {
   };
 
   const renderRequestItem = ({ item }) => {
-    let user;
-    if (activeTab === 'sent') {
-      user = item.receiver || item.to || item;
-    } else {
-      user = item.sender || item.from || item;
-    }
+    let user = activeTab === 'sent' ? (item.receiver || item.to || item) : (item.sender || item.from || item);
 
     return (
-      <View style={styles.friendCard}>
-        <Image
-          source={{ uri: user.photoURL || user.avatar || 'https://i.pravatar.cc/100' }}
-          style={styles.avatar}
-        />
+      <View style={styles.card}>
+        <Image source={{ uri: user.photoURL || user.avatar || 'https://i.pravatar.cc/100' }} style={styles.avatar} />
         <View style={styles.info}>
           <Text style={styles.name}>{user.displayName || user.name || user.username || 'Không tên'}</Text>
-          {user.email && <Text style={styles.email}>Email: {user.email}</Text>}
-          {user.phone && <Text style={styles.phone}>Số điện thoại: {user.phone}</Text>}
+          {user.email && <Text style={styles.detail}>📧 {user.email}</Text>}
+          {user.phone && <Text style={styles.detail}>📞 {user.phone}</Text>}
         </View>
-        {activeTab === 'received' ? (
-          <TouchableOpacity
-            style={styles.acceptButton}
-            onPress={() => handleAcceptRequest(item._id)}
-          >
-            <Text style={styles.acceptButtonText}>Chấp nhận</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => handleCancelRequest(item._id)}
-          >
-            <Text style={styles.cancelButtonText}>Huỷ</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={activeTab === 'received' ? styles.acceptBtn : styles.cancelBtn}
+          onPress={() => activeTab === 'received' ? handleAcceptRequest(user._id) : handleCancelRequest(item._id)}
+        >
+          <Text style={styles.btnText}>{activeTab === 'received' ? 'Chấp nhận' : 'Huỷ'}</Text>
+        </TouchableOpacity>
       </View>
     );
   };
@@ -124,151 +98,82 @@ export default function FriendListRequest({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerButton}>
-          <Text style={styles.headerIcon}>←</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backBtn}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Lời mời kết bạn</Text>
+        <Text style={styles.title}>Lời mời kết bạn</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'received' && styles.activeTab]}
-          onPress={() => setActiveTab('received')}
-        >
-          <Text style={[styles.tabText, activeTab === 'received' && styles.activeTabText]}>
-            Đã nhận
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'sent' && styles.activeTab]}
-          onPress={() => setActiveTab('sent')}
-        >
-          <Text style={[styles.tabText, activeTab === 'sent' && styles.activeTabText]}>
-            Đã gửi
-          </Text>
-        </TouchableOpacity>
+      <View style={styles.tabs}>
+        {['received', 'sent'].map(tab => (
+          <TouchableOpacity
+            key={tab}
+            style={[styles.tab, activeTab === tab && styles.activeTab]}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
+              {tab === 'received' ? 'Đã nhận' : 'Đã gửi'}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      <View style={styles.contentArea}>
+      <View style={styles.content}>
         {loading ? (
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#0068FF" />
         ) : requestsToDisplay.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Text style={styles.noRequestsText}>
-              {activeTab === 'sent'
-                ? 'Không có lời mời kết bạn đã gửi nào'
-                : 'Không có lời mời kết bạn đã nhận nào'}
-            </Text>
-          </View>
+          <Text style={styles.emptyText}>
+            {activeTab === 'sent' ? 'Không có lời mời đã gửi.' : 'Không có lời mời đã nhận.'}
+          </Text>
         ) : (
           <FlatList
             data={requestsToDisplay}
             keyExtractor={item => item._id?.toString() || Math.random().toString()}
             renderItem={renderRequestItem}
-            contentContainerStyle={styles.listContent}
+            contentContainerStyle={{ paddingBottom: 20 }}
           />
         )}
       </View>
+
+      <Footer navigation={navigation} currentTab="FriendListRequest" />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#f7f9fc' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee'
   },
-  headerButton: { padding: 5 },
-  headerIcon: { fontSize: 24 },
-  headerTitle: { fontSize: 18, fontWeight: 'bold' },
-  tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  backBtn: { fontSize: 22, color: '#333' },
+  title: { fontSize: 20, fontWeight: 'bold', color: '#222' },
+  tabs: {
+    flexDirection: 'row', backgroundColor: '#fff',
+    justifyContent: 'space-around', borderBottomWidth: 1, borderBottomColor: '#eee'
   },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
+  tab: {
+    paddingVertical: 10, flex: 1, alignItems: 'center'
   },
   activeTab: {
-    borderBottomColor: '#007AFF',
+    borderBottomWidth: 2, borderColor: '#0068FF'
   },
-  tabText: {
-    fontSize: 16,
-    color: '#888',
-    fontWeight: '500',
+  tabText: { fontSize: 16, color: '#888' },
+  activeTabText: { color: '#0068FF', fontWeight: 'bold' },
+  content: { flex: 1, padding: 16 },
+  emptyText: { textAlign: 'center', color: '#888', marginTop: 30, fontSize: 16 },
+  card: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    padding: 12, borderRadius: 10, marginBottom: 12,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 1 }, shadowRadius: 3,
+    elevation: 1, borderWidth: 1, borderColor: '#eee'
   },
-  activeTabText: {
-    color: '#000',
-  },
-  contentArea: {
-    flex: 1,
-    padding: 16,
-  },
-  friendCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fafbfc',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginRight: 12,
-    backgroundColor: '#ccc',
-  },
-  info: {
-    flex: 1,
-  },
-  name: { fontSize: 16, fontWeight: 'bold' },
-  email: { fontSize: 14, color: '#555' },
-  phone: { fontSize: 14, color: '#555' },
-  acceptButton: {
-    backgroundColor: '#28a745',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  acceptButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  cancelButton: {
-    backgroundColor: '#e74c3c',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  cancelButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  emptyStateContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 40,
-  },
-  noRequestsText: {
-    fontSize: 16,
-    color: '#666',
-  },
-  listContent: {
-    paddingBottom: 80,
-  },
+  avatar: { width: 48, height: 48, borderRadius: 24, marginRight: 12, backgroundColor: '#ccc' },
+  info: { flex: 1 },
+  name: { fontSize: 16, fontWeight: '600', marginBottom: 2 },
+  detail: { fontSize: 13, color: '#555' },
+  acceptBtn: { backgroundColor: '#28a745', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  cancelBtn: { backgroundColor: '#dc3545', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8 },
+  btnText: { color: '#fff', fontWeight: 'bold' }
 });
