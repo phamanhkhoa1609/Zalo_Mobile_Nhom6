@@ -5,6 +5,7 @@ import axios from 'axios';
 import { BASE_URL } from '../config';
 import Footer from './Footer';
 import * as ImagePicker from 'expo-image-picker';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
@@ -193,6 +194,12 @@ export default function ProfileScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#222" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Thông tin tài khoản</Text>
+      </View>
       <View style={styles.content}>
         <Text style={styles.title}>Thông tin tài khoản</Text>
         <TouchableOpacity onPress={handlePickAvatar} disabled={!editMode}>
@@ -314,6 +321,21 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  backButton: {
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#222',
+  },
   content: { alignItems: 'center', flex: 1, padding: 20 },
   title: { fontSize: 22, fontWeight: 'bold', marginTop: 10, marginBottom: 10 },
   avatar: { width: 100, height: 100, borderRadius: 50, marginVertical: 10 },

@@ -183,34 +183,34 @@ useEffect(() => {
   };
 
   const renderFriendItem = ({ item }) => {
-    console.log('🎯 Rendering friend item:', item);
-    return (
-      <TouchableOpacity
-        onPress={() => toggleMember(item._id)}
-        style={[styles.friendItem, selectedMembers.includes(item._id) && styles.selectedFriend]}
-      >
-        <View style={styles.friendInfo}>
-          <Image
-            source={item.photoURL ? { uri: item.photoURL } : require('../assets/icons8-account-48.png')}
-            style={styles.friendAvatar}
-          />
-          <View style={styles.friendTextInfo}>
-            <Text style={styles.friendName}>
-              {item.displayName || item.name || item.username || 'Không tên'}
-            </Text>
-            {(item.email || item.mail) && (
-              <Text style={styles.friendEmail}>{item.email || item.mail}</Text>
-            )}
-          </View>
+  console.log('🎯 Rendering friend item:', item);
+  return (
+    <TouchableOpacity
+      onPress={() => toggleMember(item._id)}
+      style={[styles.friendItem, selectedMembers.includes(item._id) && styles.selectedFriend]}
+    >
+      <View style={styles.friendInfo}>
+        <Image
+          source={item.photoURL ? { uri: item.photoURL } : require('../assets/icons8-account-48.png')}
+          style={styles.friendAvatar}
+        />
+        <View style={styles.friendTextInfo}>
+          <Text style={styles.friendName}>
+            {item.displayName || item.name || item.username || 'Không tên'}
+          </Text>
+          {(item.email || item.mail) && (
+            <Text style={styles.friendEmail}>{item.email || item.mail}</Text>
+          )}
         </View>
-        {selectedMembers.includes(item._id) && (
-          <View style={styles.checkmark}>
-            <Text style={styles.checkmarkText}>✓</Text>
-          </View>
-        )}
-      </TouchableOpacity>
-    );
-  };
+      </View>
+      {selectedMembers.includes(item._id) && (
+        <View style={styles.checkmark}>
+          <Text style={styles.checkmarkText}>✓</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+};
 
   const renderItem = ({ item }) => {
     if (!item?.idChatRoom) return null;
@@ -221,6 +221,53 @@ useEffect(() => {
       members: item.members?.length,
       type: item.type
     });
+    return (
+  <TouchableOpacity
+    style={[
+      styles.chatItem,
+      item.isGroup && styles.groupChat
+    ]}
+    onPress={() => navigation.navigate('OnlineChat', { 
+      idChatRoom: item.idChatRoom,
+      isGroup: item.isGroup,
+      name: item.name,
+      avatar: item.photoURL && item.photoURL.trim() !== '' ? item.photoURL : null,
+      isDefaultAvatar: !(item.photoURL && item.photoURL.trim() !== '')
+    })}
+  >
+    <View style={styles.row}>
+      <View style={styles.avatarContainer}>
+        <Image 
+          source={item.photoURL ? { uri: item.photoURL } : require('../assets/icons8-account-48.png')}
+          style={styles.avatar}
+        />
+        {item.isGroup && (
+          <View style={styles.groupIconBadge}>
+            <Text style={styles.groupIconText}>👥</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.chatInfo}>
+        <View style={styles.nameRow}>
+          <Text style={[styles.name, item.isGroup && styles.groupName]}>
+            {item.name || 'Không tên'}
+          </Text>
+        </View>
+        <Text style={styles.lastMsg} numberOfLines={1}>
+          {item.lastMessage?.text || 'Chưa có tin nhắn'}
+        </Text>
+      </View>
+      {item.isGroup && (
+        <TouchableOpacity
+          onPress={handleManageGroup}
+          style={styles.editButton}
+        >
+          <Text style={styles.editButtonText}>⚙️</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  </TouchableOpacity>
+);
 
     const handleManageGroup = () => {
       console.log('📦 Opening member management for group:', item.idChatRoom);
@@ -234,7 +281,13 @@ useEffect(() => {
           styles.chatItem,
           item.isGroup && styles.groupChat
         ]}
-        onPress={() => navigation.navigate('OnlineChat', { idChatRoom: item.idChatRoom })}
+        onPress={() => navigation.navigate('OnlineChat', { 
+      idChatRoom: item.idChatRoom,
+      isGroup: item.isGroup,
+      name: item.name,
+      avatar: item.photoURL && item.photoURL.trim() !== '' ? item.photoURL : null,
+      isDefaultAvatar: !(item.photoURL && item.photoURL.trim() !== '')
+    })}
       >
         <View style={styles.row}>
           <View style={styles.avatarContainer}>

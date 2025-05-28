@@ -22,6 +22,7 @@ export default function OnlineChatScreen({ route, navigation }) {
   const flatListRef = useRef();
   const [recording, setRecording] = useState(null);
   const [sound, setSound] = useState(null);
+  
 
   // State cho menu tin nhắn
   const [selectedMsg, setSelectedMsg] = useState(null);
@@ -41,6 +42,27 @@ export default function OnlineChatScreen({ route, navigation }) {
 
   const [headerInfo, setHeaderInfo] = useState({ name: '', avatar: '', status: '' });
 
+  // Thêm state
+const [showUserModal, setShowUserModal] = useState(false);
+const [userProfile, setUserProfile] = useState(null);
+const [loadingProfile, setLoadingProfile] = useState(false);
+
+// Hàm fetch thông tin user
+const fetchUserProfile = async () => {
+  setLoadingProfile(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const res = await axios.get(`${BASE_URL}/api/profile`, {
+      headers: { Authorization: token }
+    });
+    setUserProfile(res.data.data);
+    setShowUserModal(true);
+  } catch (err) {
+    Alert.alert('Lỗi', 'Không lấy được thông tin user');
+  } finally {
+    setLoadingProfile(false);
+  }
+};
   // Lấy danh sách tin nhắn và userId
   const reloadMessages = async () => {
     try {
@@ -95,39 +117,64 @@ export default function OnlineChatScreen({ route, navigation }) {
   }, [idChatRoom]);
 
   // Lấy thông tin user/group cho header
-  useEffect(() => {
-    const fetchHeaderInfo = async () => {
-      try {
-        const token = await AsyncStorage.getItem('token');
-        if (isGroup) {
-          // Lấy info group
-          const res = await axios.get(`${BASE_URL}/profile-group/${idChatRoom}`, {
-            headers: { Authorization: token }
-          });
-          const group = res.data?.data;
-          setHeaderInfo({
-            name: group?.name || 'Nhóm',
-            avatar: group?.avatar || '',
-            status: group?.status || ''
-          });
-        } else {
-          // Lấy info user
-          const res = await axios.get(`${BASE_URL}/info-user/${idChatRoom}`, {
-            headers: { Authorization: token }
-          });
-          const user = res.data?.data;
-          setHeaderInfo({
-            name: user?.displayName || 'Người dùng',
-            avatar: user?.photoURL || '',
-            status: user?.status || ''
-          });
-        }
-      } catch (e) {
-        setHeaderInfo({ name: 'Chat', avatar: '', status: '' });
+  // Trong OnlineChatScreen.js
+// Trong OnlineChatScreen.js
+useEffect(() => {
+  const fetchHeaderInfo = async () => {
+    try {
+      const { name, avatar, isDefaultAvatar } = route.params || {};
+      
+      // Nếu đã có name hoặc avatar từ route.params, sử dụng luôn
+      if (name || avatar || isDefaultAvatar) {
+        setHeaderInfo({
+          name: name || 'Chat',
+          avatar: isDefaultAvatar ? '_default_avatar_' : (avatar || ''),
+          status: isGroup ? 'Group' : 'Active recently'
+        });
+        if (name && (avatar || isDefaultAvatar)) return;
       }
-    };
-    fetchHeaderInfo();
-  }, [idChatRoom, isGroup]);
+
+      // Nếu không có dữ liệu từ route.params, gọi API
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('No token found');
+      }
+
+      if (isGroup) {
+        const res = await axios.get(`${BASE_URL}/profile-group/${idChatRoom}`, {
+          headers: { Authorization: token }
+        });
+        const group = res.data?.data;
+        setHeaderInfo(prevInfo => ({
+          ...prevInfo,
+          name: group?.name || 'Nhóm không tên',
+          avatar: group?.avatar || prevInfo.avatar || '',
+          status: group?.status || 'Group'
+        }));
+      } else {
+        const res = await axios.get(`${BASE_URL}/info-user/${idChatRoom}`, {
+          headers: { Authorization: token }
+        });
+        const user = res.data?.data;
+        setHeaderInfo(prevInfo => ({
+          ...prevInfo,
+          name: user?.displayName || user?.name || 'Người dùng',
+          avatar: user?.photoURL || user?.avatar || prevInfo.avatar || '',
+          status: user?.status || 'Active recently'
+        }));
+      }
+    } catch (e) {
+      console.error('Fetch header info error:', e.message);
+      // Nếu API lỗi (404), sử dụng dữ liệu từ route.params hoặc giá trị mặc định
+      setHeaderInfo({ 
+        name: route.params?.name || 'Chat', 
+        avatar: route.params?.avatar ? { uri: route.params.avatar } : require('../assets/icons8-account-48.png'), 
+        status: isGroup ? 'Group' : 'Active recently' 
+      });
+    }
+  };
+  fetchHeaderInfo();
+}, [idChatRoom, isGroup, route.params]);
 
   // Gửi tin nhắn
   const handleSend = async () => {
@@ -533,36 +580,97 @@ export default function OnlineChatScreen({ route, navigation }) {
   );
 
   // HEADER responsive, SafeAreaView
-  useEffect(() => {
-    navigation.setOptions({
-      headerShown: true,
-      header: () => (
-        <SafeAreaView style={{ backgroundColor: '#fff' }}>
-          <View style={styles.webHeaderContainer}>
-            <View style={styles.webHeaderLeft}>
+ useEffect(() => {
+  navigation.setOptions({
+    headerShown: true,
+    header: () => (
+      <SafeAreaView style={{ backgroundColor: '#fff' }}>
+        <View style={styles.webHeaderContainer}>
+          <View style={styles.webHeaderLeft}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 12 }}>
+              <Ionicons name="arrow-back" size={24} color="#222" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => !isGroup && fetchUserProfile()}>
               <Image
-                source={headerInfo.avatar ? { uri: headerInfo.avatar } : require('../assets/icons8-account-48.png')}
+                source={
+                  headerInfo.avatar === '_default_avatar_'
+                    ? require('../assets/icons8-account-48.png')
+                    : (headerInfo.avatar ? { uri: headerInfo.avatar } : require('../assets/icons8-account-48.png'))
+                }
                 style={styles.webHeaderAvatar}
+                defaultSource={require('../assets/icons8-account-48.png')}
               />
-              <View style={{ flexShrink: 1 }}>
-                <Text style={styles.webHeaderName} numberOfLines={1}>{headerInfo.name || 'Chat'}</Text>
-                <Text style={styles.webHeaderStatus} numberOfLines={1}>{headerInfo.status || 'Active recently'}</Text>
-              </View>
-            </View>
-            <View style={styles.webHeaderRight}>
-              <TouchableOpacity style={styles.webHeaderIconBtn} onPress={() => setShowSearchModal(true)}>
-                <Ionicons name="search" size={22} color="#222" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.webHeaderIconBtn}>
-                <MaterialIcons name="add-box" size={22} color="#222" />
-              </TouchableOpacity>
+            </TouchableOpacity>
+            <View style={{ flexShrink: 1 }}>
+              <Text style={styles.webHeaderName} numberOfLines={1}>{headerInfo.name || 'Chat'}</Text>
+              <Text style={styles.webHeaderStatus} numberOfLines={1}>{headerInfo.status || 'Active recently'}</Text>
             </View>
           </View>
-        </SafeAreaView>
-      )
-    });
-  }, [navigation, headerInfo]);
+          <View style={styles.webHeaderRight}>
+            <TouchableOpacity style={styles.webHeaderIconBtn} onPress={() => setShowSearchModal(true)}>
+              <Ionicons name="search" size={22} color="#222" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.webHeaderIconBtn}>
+              <MaterialIcons name="add-box" size={22} color="#222" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    )
+  });
+}, [navigation, headerInfo]);
 
+// Modal cho thông tin cá nhân
+const renderUserModal = () => (
+  <Modal
+    visible={showUserModal}
+    transparent
+    animationType="fade"
+    onRequestClose={() => setShowUserModal(false)}
+  >
+    <View style={styles.modalOverlay}>
+      <View style={styles.modalContent}>
+        <Text style={styles.modalTitle}>User Profile</Text>
+        <Image
+          source={userProfile?.photoURL || userProfile?.avatar ? { uri: userProfile?.photoURL || userProfile?.avatar } : require('../assets/icons8-account-48.png')}
+          style={styles.avatar}
+        />
+        <Text style={styles.name}>{userProfile?.displayName || userProfile?.name || 'Không tên'}</Text>
+        <Text style={styles.betaText}>Beta</Text>
+        <View style={styles.infoBlock}>
+          <Text style={styles.infoTitle}>Information</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Email</Text>
+            <Text style={styles.infoValue}>{userProfile?.email || 'Không có'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Phone</Text>
+            <Text style={styles.infoValue}>{userProfile?.phone || 'Không có'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Dob</Text>
+            <Text style={styles.infoValue}>{userProfile?.dob || 'Không có'}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>Manual group: (0)</Text>
+            <Text style={styles.infoValue}>{userProfile?.groups?.length || 0}</Text>
+          </View>
+        </View>
+        <TouchableOpacity style={styles.unfriendBtn} onPress={() => {
+          Alert.alert('Xác nhận', 'Bạn có chắc muốn hủy kết bạn?', [
+            { text: 'Không', style: 'cancel' },
+            { text: 'Có', onPress: () => handleUnfriend() }
+          ]);
+        }}>
+          <Text style={styles.unfriendText}>Hủy kết bạn</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.closeBtn} onPress={() => setShowUserModal(false)}>
+          <Text style={styles.closeText}>Close</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </Modal>
+);
   const handleSearchMessages = async () => {
     setSearchLoading(true);
     try {
@@ -580,6 +688,7 @@ export default function OnlineChatScreen({ route, navigation }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Hiển thị tin nhắn ghim ở đầu nếu có */}
+      {renderUserModal()}
       {pinnedMessage && (
         <View style={{ backgroundColor: '#fffbe6', borderRadius: 12, margin: 8, padding: 12, borderWidth: 1, borderColor: '#ffe58f' }}>
           <Text style={{ fontWeight: 'bold', color: '#d48806', marginBottom: 4 }}>Tin nhắn đã ghim</Text>
@@ -772,5 +881,100 @@ const styles = StyleSheet.create({
   },
   webHeaderIconBtn: {
     marginLeft: 16
-  }
+  },
+  modalOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  modalContent: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 20,
+    elevation: 5,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center'
+  },
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginVertical: 10,
+  },
+  name: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginVertical: 8,
+  },
+  betaText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  infoBlock: {
+    width: '100%',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  infoTitle: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 8,
+    color: '#333',
+    borderBottomWidth: 1,
+    borderColor: '#eee',
+    paddingBottom: 4,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  infoLabel: {
+    color: '#888',
+    fontWeight: 'bold',
+    minWidth: 60,
+  },
+  infoValue: {
+    color: '#222',
+    flex: 1,
+    textAlign: 'right',
+  },
+  unfriendBtn: {
+    backgroundColor: '#e53935',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  unfriendText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  closeBtn: {
+    backgroundColor: '#eee',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  closeText: {
+    color: '#333',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  
 });
