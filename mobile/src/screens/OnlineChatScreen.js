@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView,
-  Platform, Image, Alert, Modal, SafeAreaView
+  Platform, Image, Alert, Modal, SafeAreaView, Linking
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -11,6 +11,7 @@ import { Audio } from 'expo-av';
 import { BASE_URL } from '../config';
 import io from 'socket.io-client';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 
 let socket;
 
@@ -47,6 +48,13 @@ const [showUserModal, setShowUserModal] = useState(false);
 const [userProfile, setUserProfile] = useState(null);
 const [loadingProfile, setLoadingProfile] = useState(false);
 
+// Thêm state cho vote modal
+const [showVoteModal, setShowVoteModal] = useState(false);
+const [voteQuestion, setVoteQuestion] = useState('');
+const [voteOptions, setVoteOptions] = useState(['']);
+const [voteEndTime, setVoteEndTime] = useState(null);
+const [isMultipleChoice, setIsMultipleChoice] = useState(false);
+
 // Hàm fetch thông tin user
 const fetchUserProfile = async () => {
   setLoadingProfile(true);
@@ -82,6 +90,10 @@ const fetchUserProfile = async () => {
   };
 
   useEffect(() => {
+    // Khai báo các biến listener ở ngoài hàm init
+    let messageListener;
+    let incomingCallListener;
+
     const init = async () => {
       try {
         const token = await AsyncStorage.getItem('token');
@@ -100,21 +112,43 @@ const fetchUserProfile = async () => {
         socket = io(BASE_URL);
         socket.emit('setup', JSON.stringify(payload.id));
         socket.emit('join chat', idChatRoom, JSON.stringify(payload.id));
-
-        socket.on('message', () => {
+        
+        // Gán giá trị cho các biến listener
+        messageListener = () => {
           reloadMessages();
-        });
+        };
+        incomingCallListener = ({ meetingId, caller, type }) => {
+          Alert.alert(
+            'Cuộc gọi đến',
+            `${caller || 'Người dùng khác'} đang gọi bạn (${type === 'video' ? 'Video' : 'Voice'})`,
+            [
+              { text: 'Từ chối', style: 'cancel' },
+              { text: 'Chấp nhận', onPress: () => navigation.navigate('MeetingScreen', { meetingId, type }) },
+            ],
+            { cancelable: false }
+          );
+        };
+
+        socket.on('message', messageListener);
+        socket.on('incomingCall', incomingCallListener);
+
       } catch (err) {
         console.warn('❌ Lỗi load tin nhắn:', err.message);
       }
     };
 
     init();
+    
+    // Cleanup function to remove listeners and disconnect socket
     return () => {
-      socket?.disconnect();
+      if (socket) {
+        socket.off('message', messageListener);
+        socket.off('incomingCall', incomingCallListener);
+        socket.disconnect();
+      }
       sound?.unloadAsync?.();
     };
-  }, [idChatRoom]);
+  }, [idChatRoom, navigation]); // Thêm navigation vào dependencies nếu nó được dùng trong callback
 
   // Lấy thông tin user/group cho header
   // Trong OnlineChatScreen.js
@@ -282,17 +316,17 @@ useEffect(() => {
     }
   };
 
-  const handleCall = async () => {
+  const handleCall = async (type = 'voice') => {
     try {
       const token = await AsyncStorage.getItem('token');
-      const res = await axios.post(`${BASE_URL}/api/create-call-room`, {}, {
+      const res = await axios.post(`${BASE_URL}/api/create-meeting`, {}, {
         headers: { Authorization: token }
       });
-      const url = res.data?.url;
-      const meetingId = url.split('/').pop();
-
+      const meetingId = res.data?.roomId;
       if (meetingId) {
-        navigation.navigate('CallScreen', { meetingId });
+        // Gửi notify qua socket cho người nhận (nếu muốn)
+        // socket.emit('notify', { meetingId, userId: <id người nhận>, caller: userId, type });
+        navigation.navigate('MeetingScreen', { meetingId, type });
       }
     } catch (err) {
       Alert.alert('Lỗi', 'Không tạo được cuộc gọi');
@@ -685,10 +719,193 @@ const renderUserModal = () => (
     setSearchLoading(false);
   };
 
+  // Hàm gửi vị trí
+  const sendLocation = async () => {
+    try {
+      console.log('Requesting location permission...');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('Location permission status:', status);
+      if (status !== 'granted') {
+        Alert.alert('Lỗi', 'Cần cấp quyền truy cập vị trí');
+        return;
+      }
+
+      console.log('Fetching current location...');
+      const location = await Location.getCurrentPositionAsync({});
+      const { latitude, longitude } = location.coords;
+      console.log('Location obtained:', { latitude, longitude });
+      
+      console.log('Fetching address from coordinates...');
+      const [address] = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude
+      });
+
+      const addressString = address ? 
+        `${address.street}, ${address.city}, ${address.region}, ${address.country}` : 
+        'Không xác định được địa chỉ';
+      console.log('Address string:', addressString);
+
+      const token = await AsyncStorage.getItem('token');
+      
+      // === Thay đổi ở đây: Gửi địa chỉ như tin nhắn text thông thường ===
+      const payload = { chatRoomId: idChatRoom, content: addressString, type: 'text', reply: '' }; // Chuẩn bị payload như tin nhắn text
+      console.log('Sending location address as text message API call...', payload);
+
+      await axios.post(`${BASE_URL}/api/send-message`, { data: payload }, { // Gọi endpoint send-message
+        headers: { Authorization: token }
+      });
+
+      console.log('Location address sent successfully as text. Reloading messages...');
+      reloadMessages();
+    } catch (err) {
+      console.error('Send location error:', err);
+      Alert.alert('Lỗi', 'Không gửi được vị trí'); // Vẫn giữ alert lỗi chung
+    }
+  };
+
+  // Hàm tạo vote
+  const createVote = async () => {
+    try {
+      if (!voteQuestion.trim()) {
+        Alert.alert('Lỗi', 'Vui lòng nhập câu hỏi');
+        return;
+      }
+
+      const validOptions = voteOptions.filter(opt => opt.trim());
+      if (validOptions.length < 2) {
+        Alert.alert('Lỗi', 'Cần ít nhất 2 lựa chọn');
+        return;
+      }
+
+      const token = await AsyncStorage.getItem('token');
+      console.log('Sending create vote API call...', { chatRoomId: idChatRoom, question: voteQuestion, options: validOptions, endTime: voteEndTime, isMultipleChoice });
+      await axios.post(`${BASE_URL}/api/create-vote`, {
+        data: {
+          chatRoomId: idChatRoom,
+          question: voteQuestion,
+          options: validOptions,
+          endTime: voteEndTime,
+          isMultipleChoice
+        }
+      }, {
+        headers: { Authorization: token }
+      });
+
+      console.log('Vote created successfully. Closing modal and reloading messages...');
+      setShowVoteModal(false);
+      setVoteQuestion('');
+      setVoteOptions(['']);
+      setVoteEndTime(null);
+      setIsMultipleChoice(false);
+      reloadMessages();
+    } catch (err) {
+      console.error('Create vote error:', err);
+      Alert.alert('Lỗi', 'Không tạo được vote');
+    }
+  };
+
+  // Hàm bỏ phiếu
+  const castVote = async (messageId, optionIndex) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      await axios.post(`${BASE_URL}/api/cast-vote`, {
+        messageId,
+        optionIndex
+      }, {
+        headers: { Authorization: token }
+      });
+      reloadMessages();
+    } catch (err) {
+      console.error('Cast vote error:', err);
+      Alert.alert('Lỗi', 'Không bỏ phiếu được');
+    }
+  };
+
+  const addVoteOptionInput = () => {
+    setVoteOptions(prevOptions => [...prevOptions, '']);
+  };
+
+  const removeVoteOptionInput = (index) => {
+    const newOptions = [...voteOptions];
+    newOptions.splice(index, 1);
+    setVoteOptions(newOptions);
+  };
+
+  const handleVoteOptionChange = (text, index) => {
+    const newOptions = [...voteOptions];
+    newOptions[index] = text;
+    setVoteOptions(newOptions);
+  };
+
+  const renderVoteModal = () => (
+    <Modal
+      visible={showVoteModal}
+      transparent
+      animationType="slide"
+      onRequestClose={() => setShowVoteModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Tạo cuộc bình chọn</Text>
+          <TextInput
+            placeholder="Nhập câu hỏi..."
+            style={styles.inputField}
+            value={voteQuestion}
+            onChangeText={setVoteQuestion}
+          />
+          <Text style={styles.sectionTitle}>Các lựa chọn:</Text>
+          <FlatList
+            data={voteOptions}
+            keyExtractor={(item, index) => index.toString()}
+            renderItem={({ item, index }) => (
+              <View style={styles.optionInputContainer}>
+                <TextInput
+                  placeholder={`Lựa chọn ${index + 1}`}
+                  style={styles.optionInput}
+                  value={item}
+                  onChangeText={(text) => handleVoteOptionChange(text, index)}
+                />
+                {voteOptions.length > 1 && (
+                  <TouchableOpacity onPress={() => removeVoteOptionInput(index)}>
+                    <MaterialIcons name="remove-circle-outline" size={24} color="red" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            keyboardShouldPersistTaps="handled"
+          />
+          <TouchableOpacity onPress={addVoteOptionInput} style={styles.addOptionBtn}>
+            <Text style={styles.addOptionText}>+ Thêm lựa chọn</Text>
+          </TouchableOpacity>
+
+          {/* Tùy chọn thời gian kết thúc và đa lựa chọn có thể thêm sau */}
+          {/* <Text style={styles.sectionTitle}>Cài đặt:</Text> */}
+          {/* <View style={styles.settingRow}> */}
+            {/* <Text>Cho phép nhiều lựa chọn</Text> */}
+             {/* Toggle Switch ở đây */}
+          {/* \n          </View> */}
+          {/* <View style={styles.settingRow}> */}
+            {/* <Text>Thời gian kết thúc</Text> */}
+             {/* DatePicker hoặc TextInput ở đây */}
+          {/* \n          </View> */}
+
+          <TouchableOpacity onPress={createVote} style={styles.createVoteBtn}>
+            <Text style={styles.createVoteText}>Tạo bình chọn</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setShowVoteModal(false)} style={styles.cancelVoteBtn}>
+            <Text style={styles.cancelVoteText}>Hủy</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Hiển thị tin nhắn ghim ở đầu nếu có */}
       {renderUserModal()}
+      {renderVoteModal()}
       {pinnedMessage && (
         <View style={{ backgroundColor: '#fffbe6', borderRadius: 12, margin: 8, padding: 12, borderWidth: 1, borderColor: '#ffe58f' }}>
           <Text style={{ fontWeight: 'bold', color: '#d48806', marginBottom: 4 }}>Tin nhắn đã ghim</Text>
@@ -719,6 +936,8 @@ const renderUserModal = () => (
         >
           <Text style={styles.mediaText}>{recording ? '⏹' : '🎙'}</Text>
         </TouchableOpacity>
+        <TouchableOpacity onPress={sendLocation} style={styles.mediaBtn}><Text style={styles.mediaText}>📍</Text></TouchableOpacity>
+        <TouchableOpacity onPress={() => setShowVoteModal(true)} style={styles.mediaBtn}><Text style={styles.mediaText}>📊</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => handleCall('voice')} style={styles.mediaBtn}><Text style={styles.mediaText}>📞</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => handleCall('video')} style={styles.mediaBtn}><Text style={styles.mediaText}>📹</Text></TouchableOpacity>
         <TextInput
@@ -976,5 +1195,137 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  
+  inputField: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    width: '100%',
+  },
+  sectionTitle: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 8,
+    marginTop: 12,
+    width: '100%',
+  },
+  optionInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  optionInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  addOptionBtn: {
+    backgroundColor: '#eef',
+    borderRadius: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginTop: 8,
+    width: '100%',
+  },
+  addOptionText: {
+    color: '#0068ff',
+    fontWeight: 'bold',
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+  },
+  createVoteBtn: {
+    backgroundColor: '#0068ff',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    width: '100%',
+  },
+  createVoteText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  cancelVoteBtn: {
+    backgroundColor: '#eee',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+    width: '100%',
+  },
+  cancelVoteText: {
+    color: '#333',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  voteContainer: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 5,
+  },
+  voteQuestion: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  voteOption: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 5,
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  votedOption: {
+    borderColor: '#0068ff',
+  },
+  voteOptionContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  voteOptionText: {
+    flex: 1,
+    marginRight: 10,
+  },
+  voteCount: {
+    fontWeight: 'bold',
+    color: '#0068ff',
+  },
+  voteBar: {
+    height: 5,
+    backgroundColor: '#0068ff',
+    borderRadius: 2.5,
+    marginTop: 4,
+  },
+  voteEndTime: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 8,
+    textAlign: 'right',
+  },
+  locationContainer: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 10,
+    padding: 10,
+    marginTop: 5,
+  },
+  locationText: {
+    color: '#388e3c',
+    fontWeight: 'bold',
+  },
 });
