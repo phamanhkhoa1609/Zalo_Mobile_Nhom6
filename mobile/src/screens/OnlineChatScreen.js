@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   FlatList, StyleSheet, KeyboardAvoidingView,
-  Platform, Image, Alert, Modal
+  Platform, Image, Alert, Modal, SafeAreaView
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
@@ -10,11 +10,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import { BASE_URL } from '../config';
 import io from 'socket.io-client';
+import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 let socket;
 
 export default function OnlineChatScreen({ route, navigation }) {
-  const { idChatRoom } = route.params;
+  const { idChatRoom, isGroup } = route.params || {};
   const [messages, setMessages] = useState([]);
   const [content, setContent] = useState('');
   const [userId, setUserId] = useState(null);
@@ -31,6 +32,14 @@ export default function OnlineChatScreen({ route, navigation }) {
   const [forwardModal, setForwardModal] = useState(false);
   const [chatList, setChatList] = useState([]);
   const [loadingForward, setLoadingForward] = useState(false);
+
+  // State cho search tin nhắn
+  const [showSearchModal, setShowSearchModal] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  const [headerInfo, setHeaderInfo] = useState({ name: '', avatar: '', status: '' });
 
   // Lấy danh sách tin nhắn và userId
   const reloadMessages = async () => {
@@ -84,6 +93,41 @@ export default function OnlineChatScreen({ route, navigation }) {
       sound?.unloadAsync?.();
     };
   }, [idChatRoom]);
+
+  // Lấy thông tin user/group cho header
+  useEffect(() => {
+    const fetchHeaderInfo = async () => {
+      try {
+        const token = await AsyncStorage.getItem('token');
+        if (isGroup) {
+          // Lấy info group
+          const res = await axios.get(`${BASE_URL}/profile-group/${idChatRoom}`, {
+            headers: { Authorization: token }
+          });
+          const group = res.data?.data;
+          setHeaderInfo({
+            name: group?.name || 'Nhóm',
+            avatar: group?.avatar || '',
+            status: group?.status || ''
+          });
+        } else {
+          // Lấy info user
+          const res = await axios.get(`${BASE_URL}/info-user/${idChatRoom}`, {
+            headers: { Authorization: token }
+          });
+          const user = res.data?.data;
+          setHeaderInfo({
+            name: user?.displayName || 'Người dùng',
+            avatar: user?.photoURL || '',
+            status: user?.status || ''
+          });
+        }
+      } catch (e) {
+        setHeaderInfo({ name: 'Chat', avatar: '', status: '' });
+      }
+    };
+    fetchHeaderInfo();
+  }, [idChatRoom, isGroup]);
 
   // Gửi tin nhắn
   const handleSend = async () => {
@@ -214,14 +258,13 @@ export default function OnlineChatScreen({ route, navigation }) {
     try {
       if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/unsent-message/${selectedMsg.id}`, {}, {
+      await axios.patch(`${BASE_URL}/api/unsent-message/${selectedMsg.id}`, {}, {
         headers: { Authorization: token }
       });
       setShowMsgMenu(false);
       reloadMessages();
       Alert.alert('Thành công', 'Đã thu hồi tin nhắn!');
     } catch (err) {
-      console.log('Recall error:', err?.response?.data || err.message);
       Alert.alert('Lỗi', 'Không thu hồi được tin nhắn');
     }
     setLoadingAction(false);
@@ -232,33 +275,33 @@ export default function OnlineChatScreen({ route, navigation }) {
     try {
       if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/pin-message/${selectedMsg.id}`, {}, {
+      await axios.patch(`${BASE_URL}/api/pin-message/${selectedMsg.id}`, {}, {
         headers: { Authorization: token }
       });
       setShowMsgMenu(false);
       reloadMessages();
       Alert.alert('Thành công', 'Đã ghim tin nhắn!');
     } catch (err) {
-      console.log('Pin error:', err?.response?.data || err.message);
       Alert.alert('Lỗi', 'Không ghim được tin nhắn');
     }
     setLoadingAction(false);
   };
 
-  const handleUnpin = async () => {
+  const handleUnpinPinned = async () => {
+    if (!pinnedMessage?.id) return;
     setLoadingAction(true);
     try {
-      if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/unpin-message/${selectedMsg.id}`, {}, {
+      console.log('Unpin payload:', pinnedMessage.id);
+      const res = await axios.patch(`${BASE_URL}/unpin-message/${pinnedMessage.id}`, {}, {
         headers: { Authorization: token }
       });
-      setShowMsgMenu(false);
+      console.log('Unpin response:', res.data);
       reloadMessages();
-      Alert.alert('Thành công', 'Đã bỏ ghim tin nhắn!');
+      Alert.alert('Thành công', 'Đã gỡ ghim tin nhắn!');
     } catch (err) {
       console.log('Unpin error:', err?.response?.data || err.message);
-      Alert.alert('Lỗi', 'Không bỏ ghim được tin nhắn');
+      Alert.alert('Lỗi', 'Không gỡ ghim được tin nhắn');
     }
     setLoadingAction(false);
   };
@@ -268,14 +311,13 @@ export default function OnlineChatScreen({ route, navigation }) {
     try {
       if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.delete(`${BASE_URL}/message/${selectedMsg.id}`, {
+      await axios.delete(`${BASE_URL}/api/message/${selectedMsg.id}`, {
         headers: { Authorization: token }
       });
       setShowMsgMenu(false);
       reloadMessages();
       Alert.alert('Thành công', 'Đã xóa tin nhắn!');
     } catch (err) {
-      console.log('Delete error:', err?.response?.data || err.message);
       Alert.alert('Lỗi', 'Không xóa được tin nhắn');
     }
     setLoadingAction(false);
@@ -286,15 +328,36 @@ export default function OnlineChatScreen({ route, navigation }) {
     try {
       if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/hide-message/${selectedMsg.id}`, {}, {
+      await axios.patch(`${BASE_URL}/api/hide-message/${selectedMsg.id}`, {}, {
         headers: { Authorization: token }
       });
       setShowMsgMenu(false);
       reloadMessages();
       Alert.alert('Thành công', 'Đã ẩn tin nhắn!');
     } catch (err) {
-      console.log('Hide error:', err?.response?.data || err.message);
       Alert.alert('Lỗi', 'Không ẩn được tin nhắn');
+    }
+    setLoadingAction(false);
+  };
+
+  const handleReaction = async (emoji) => {
+    setLoadingAction(true);
+    try {
+      if (!selectedMsg?.id) throw new Error('No message selected');
+      const token = await AsyncStorage.getItem('token');
+      console.log('React payload:', selectedMsg.id, emoji);
+      const res = await axios.patch(`${BASE_URL}/react-message/${selectedMsg.id}`, { emoji }, {
+        headers: { Authorization: token }
+      });
+      console.log('React response:', res.data);
+      setMessages(prevMsgs => prevMsgs.map(msg =>
+        msg.id === selectedMsg.id ? { ...msg, reactions: res.data?.data?.reactions || [] } : msg
+      ));
+      setShowMsgMenu(false);
+      Alert.alert('Thành công', 'Đã gửi cảm xúc!');
+    } catch (err) {
+      console.log('React error:', err?.response?.data || err.message);
+      Alert.alert('Lỗi', 'Không gửi cảm xúc được');
     }
     setLoadingAction(false);
   };
@@ -304,13 +367,12 @@ export default function OnlineChatScreen({ route, navigation }) {
     setLoadingForward(true);
     try {
       const token = await AsyncStorage.getItem('token');
-      const res = await axios.get(`${BASE_URL}/api/chatrooms`, {
+      const res = await axios.get(`${BASE_URL}/chatrooms`, {
         headers: { Authorization: token }
       });
       setChatList(res.data?.data || []);
       setForwardModal(true);
     } catch (err) {
-      console.log('Forward modal error:', err?.response?.data || err.message);
       Alert.alert('Lỗi', 'Không lấy được danh sách chat');
     }
     setLoadingForward(false);
@@ -321,9 +383,11 @@ export default function OnlineChatScreen({ route, navigation }) {
     try {
       if (!selectedMsg?.id) throw new Error('No message selected');
       const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/forward-message/${selectedMsg.id}`, { targetChatRoomId }, {
+      console.log('Forward payload:', selectedMsg.id, targetChatRoomId);
+      const res = await axios.patch(`${BASE_URL}/forward-message/${selectedMsg.id}`, { chatRoomId: targetChatRoomId }, {
         headers: { Authorization: token }
       });
+      console.log('Forward response:', res.data);
       setForwardModal(false);
       setShowMsgMenu(false);
       Alert.alert('Thành công', 'Đã chuyển tiếp tin nhắn!');
@@ -334,29 +398,15 @@ export default function OnlineChatScreen({ route, navigation }) {
     setLoadingForward(false);
   };
 
-  const handleReaction = async (emoji) => {
-    setLoadingAction(true);
-    try {
-      if (!selectedMsg?.id) throw new Error('No message selected');
-      const token = await AsyncStorage.getItem('token');
-      await axios.patch(`${BASE_URL}/react-message/${selectedMsg.id}`, { emoji }, {
-        headers: { Authorization: token }
-      });
-      setShowMsgMenu(false);
-      reloadMessages();
-      Alert.alert('Thành công', 'Đã gửi cảm xúc!');
-    } catch (err) {
-      console.log('Reaction error:', err?.response?.data || err.message);
-      Alert.alert('Lỗi', 'Không gửi cảm xúc được');
-    }
-    setLoadingAction(false);
-  };
-
   // ====== RENDER ITEM VÀ MENU ======
   const handleLongPress = (msg) => {
     setSelectedMsg(msg);
     setShowMsgMenu(true);
   };
+
+  // ====== HIỂN THỊ TIN NHẮN GHIM Ở ĐẦU ======
+  const pinnedMessage = messages.find(msg => msg.isPinned || msg.pin);
+  const normalMessages = messages.filter(msg => !(msg.isPinned || msg.pin));
 
   const renderItem = ({ item }) => {
     const isSent = item.senderId === userId || item.isSent;
@@ -368,16 +418,22 @@ export default function OnlineChatScreen({ route, navigation }) {
       >
         {/* Hiển thị tên người gửi nếu không phải mình */}
         {!isSent && <Text style={styles.senderName}>{item.senderName}</Text>}
-        {/* Nội dung tin nhắn */}
-        {(item.type === 'text' || item.type === '') && <Text style={styles.messageText}>{item.content}</Text>}
-        {item.type === 'image' && <Image source={{ uri: item.media?.url }} style={styles.image} />}
-        {item.type === 'audio' && (
-          <TouchableOpacity onPress={() => playAudio(item.media?.url)}>
-            <Text style={styles.messageText}>🎧 Nhấn để nghe</Text>
-          </TouchableOpacity>
-        )}
-        {item.type === 'video' && (
-          <Text style={styles.messageText}>🎥 [Video gửi]</Text>
+        {/* Nếu tin nhắn bị ẩn */}
+        {item.hided ? (
+          <Text style={{ fontStyle: 'italic', color: '#888' }}>Tin nhắn đã bị ẩn</Text>
+        ) : (
+          <>
+            {(item.type === 'text' || item.type === '') && <Text style={styles.messageText}>{item.content}</Text>}
+            {item.type === 'image' && <Image source={{ uri: item.media?.url }} style={styles.image} />}
+            {item.type === 'audio' && (
+              <TouchableOpacity onPress={() => playAudio(item.media?.url)}>
+                <Text style={styles.messageText}>🎧 Nhấn để nghe</Text>
+              </TouchableOpacity>
+            )}
+            {item.type === 'video' && (
+              <Text style={styles.messageText}>🎥 [Video gửi]</Text>
+            )}
+          </>
         )}
         {/* Hiển thị trạng thái ghim */}
         {item.isPinned && <Text style={{ color: 'orange', fontWeight: 'bold' }}>Đã ghim</Text>}
@@ -415,9 +471,7 @@ export default function OnlineChatScreen({ route, navigation }) {
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity style={styles.menuBtn} onPress={handleRecall} disabled={loadingAction}><Text style={styles.menuText}>Thu hồi</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={handlePin} disabled={loadingAction}><Text style={styles.menuText}>Ghim</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuBtn} onPress={handleUnpin} disabled={loadingAction}><Text style={styles.menuText}>Bỏ ghim</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={handleDelete} disabled={loadingAction}><Text style={styles.menuText}>Xóa</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={handleHide} disabled={loadingAction}><Text style={styles.menuText}>Ẩn</Text></TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={openForwardModal} disabled={loadingAction}><Text style={styles.menuText}>Chuyển tiếp</Text></TouchableOpacity>
@@ -478,11 +532,67 @@ export default function OnlineChatScreen({ route, navigation }) {
     </Modal>
   );
 
+  // HEADER responsive, SafeAreaView
+  useEffect(() => {
+    navigation.setOptions({
+      headerShown: true,
+      header: () => (
+        <SafeAreaView style={{ backgroundColor: '#fff' }}>
+          <View style={styles.webHeaderContainer}>
+            <View style={styles.webHeaderLeft}>
+              <Image
+                source={headerInfo.avatar ? { uri: headerInfo.avatar } : require('../assets/icons8-account-48.png')}
+                style={styles.webHeaderAvatar}
+              />
+              <View style={{ flexShrink: 1 }}>
+                <Text style={styles.webHeaderName} numberOfLines={1}>{headerInfo.name || 'Chat'}</Text>
+                <Text style={styles.webHeaderStatus} numberOfLines={1}>{headerInfo.status || 'Active recently'}</Text>
+              </View>
+            </View>
+            <View style={styles.webHeaderRight}>
+              <TouchableOpacity style={styles.webHeaderIconBtn} onPress={() => setShowSearchModal(true)}>
+                <Ionicons name="search" size={22} color="#222" />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.webHeaderIconBtn}>
+                <MaterialIcons name="add-box" size={22} color="#222" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      )
+    });
+  }, [navigation, headerInfo]);
+
+  const handleSearchMessages = async () => {
+    setSearchLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await axios.get(`${BASE_URL}/messages/${idChatRoom}/search?_q=${encodeURIComponent(searchKeyword)}`, {
+        headers: { Authorization: token }
+      });
+      setSearchResults(res.data?.data || []);
+    } catch (e) {
+      setSearchResults([]);
+    }
+    setSearchLoading(false);
+  };
+
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {/* Hiển thị tin nhắn ghim ở đầu nếu có */}
+      {pinnedMessage && (
+        <View style={{ backgroundColor: '#fffbe6', borderRadius: 12, margin: 8, padding: 12, borderWidth: 1, borderColor: '#ffe58f' }}>
+          <Text style={{ fontWeight: 'bold', color: '#d48806', marginBottom: 4 }}>Tin nhắn đã ghim</Text>
+          <Text style={{ color: '#222', fontSize: 16 }}>{pinnedMessage.hided ? 'Tin nhắn đã bị ẩn' : pinnedMessage.content}</Text>
+          <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>{pinnedMessage.time}</Text>
+          <TouchableOpacity onPress={handleUnpinPinned} style={{ marginTop: 8, alignSelf: 'flex-end', backgroundColor: '#ffe58f', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+            <Text style={{ color: '#d48806', fontWeight: 'bold' }}>Gỡ ghim</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <FlatList
         ref={flatListRef}
-        data={messages}
+        data={normalMessages}
         renderItem={renderItem}
         keyExtractor={(item, index) => item?.id?.toString() || item._id?.toString() || index.toString()}
         contentContainerStyle={styles.messageList}
@@ -512,6 +622,41 @@ export default function OnlineChatScreen({ route, navigation }) {
           <Text style={styles.sendText}>Gửi</Text>
         </TouchableOpacity>
       </View>
+      {showSearchModal && (
+        <Modal visible={showSearchModal} transparent animationType="slide" onRequestClose={() => setShowSearchModal(false)}>
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.2)', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 20, width: '90%' }}>
+              <Text style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 10 }}>Tìm tin nhắn</Text>
+              <TextInput
+                placeholder="Nhập từ khóa..."
+                value={searchKeyword}
+                onChangeText={setSearchKeyword}
+                style={{ borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, marginBottom: 10 }}
+              />
+              <TouchableOpacity onPress={handleSearchMessages} style={{ backgroundColor: '#0078fe', padding: 10, borderRadius: 8, alignItems: 'center', marginBottom: 10 }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Tìm kiếm</Text>
+              </TouchableOpacity>
+              {searchLoading ? <Text>Đang tìm...</Text> : (
+                <FlatList
+                  data={searchResults}
+                  keyExtractor={item => item.id?.toString() || item._id?.toString()}
+                  renderItem={({ item }) => (
+                    <View style={{ paddingVertical: 8 }}>
+                      <Text style={{ fontWeight: 'bold' }}>{item.content}</Text>
+                      <Text style={{ color: '#888', fontSize: 12 }}>{item.time}</Text>
+                    </View>
+                  )}
+                  ListEmptyComponent={<Text style={{ color: '#888', textAlign: 'center' }}>Không có kết quả</Text>}
+                  style={{ maxHeight: 200 }}
+                />
+              )}
+              <TouchableOpacity onPress={() => setShowSearchModal(false)} style={{ marginTop: 10, alignItems: 'center' }}>
+                <Text style={{ color: 'red' }}>Đóng</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -585,5 +730,47 @@ const styles = StyleSheet.create({
   menuText: {
     fontSize: 17,
     color: '#222'
+  },
+  webHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    minHeight: 56
+  },
+  webHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0
+  },
+  webHeaderAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12
+  },
+  webHeaderName: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#222',
+    flexShrink: 1
+  },
+  webHeaderStatus: {
+    fontSize: 13,
+    color: '#888',
+    marginTop: 2,
+    flexShrink: 1
+  },
+  webHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  webHeaderIconBtn: {
+    marginLeft: 16
   }
 });
