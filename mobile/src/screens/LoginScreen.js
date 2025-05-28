@@ -1,150 +1,70 @@
-// ✅ Đây là phiên bản LoginScreen tối ưu (dùng config IP động)
-
+// 1. LoginScreen.js
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BASE_URL } from '../config';
 
-const LoginScreen = ({ navigation }) => {
+export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) {
-      console.log('Thiếu thông tin', 'Vui lòng nhập email và mật khẩu.');
+      Alert.alert('Thiếu thông tin', 'Vui lòng nhập email và mật khẩu.');
       return;
     }
-
     setLoading(true);
     try {
-      const res = await axios.post(`${BASE_URL}/api/login`, {
-        email,
-        password
-      });
-
+      const res = await axios.post(`${BASE_URL}/api/login`, { email, password });
+      console.log('✅ Login API response data:', res.data);
       const token = res.data.token;
-      if (token) {
+      const userId = res.data.userId || res.data.id || res.data._id;
+
+      if (token && userId) {
         await AsyncStorage.setItem('token', token);
-        console.log('Thành công', 'Đăng nhập thành công!');
+        await AsyncStorage.setItem('userId', userId);
+        console.log('✅ Đã lưu Token và User ID vào AsyncStorage');
+        navigation.replace('ChatList');
+      } else if (token) {
+        Alert.alert('Lỗi', 'Không nhận được User ID từ server, nhưng đã có Token.');
+        await AsyncStorage.setItem('token', token);
         navigation.replace('ChatList');
       } else {
-        console.log('Lỗi', 'Không nhận được token từ server.');
+        Alert.alert('Lỗi', 'Không nhận được Token từ server.');
       }
     } catch (err) {
-      console.log('❌ Lỗi đăng nhập:', err?.response?.data || err.message);
-      console.log('Lỗi', err?.response?.data?.message || 'Đăng nhập thất bại');
+      Alert.alert('Lỗi', err?.response?.data?.message || 'Đăng nhập thất bại.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      <View style={styles.logoContainer}>
-        <Image
-          source={require('../assets/logo.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      </View>
-
-      <View style={styles.formContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={loading}>
-          {loading ? (
-            <Text style={styles.loginButtonText}>Đăng nhập</Text>
-          ) : (
-            <Text style={styles.loginButtonText}>Login</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.forgotPassword}>
-          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+    <View style={styles.container}>
+      <Text style={styles.title}>Đăng nhập</Text>
+      <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
+      <TextInput style={styles.input} placeholder="Mật khẩu" secureTextEntry value={password} onChangeText={setPassword} />
+      <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Đăng nhập</Text>}
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+        <Text style={styles.link}>Chưa có tài khoản? Đăng ký</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')}>
+        <Text style={styles.forgot}>Quên mật khẩu?</Text>
+      </TouchableOpacity>
+    </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  logoContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logo: {
-    width: 200,
-    height: 200,
-  },
-  formContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    justifyContent: 'center',
-  },
-  input: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    marginBottom: 15,
-    paddingHorizontal: 15,
-    fontSize: 16,
-  },
-  loginButton: {
-    backgroundColor: '#007AFF',
-    height: 50,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  loginButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  forgotPassword: {
-    marginTop: 15,
-    alignItems: 'center',
-  },
-  forgotPasswordText: {
-    color: '#007AFF',
-    fontSize: 14,
-  },
+  container: { flex: 1, justifyContent: 'center', padding: 24 },
+  title: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
+  input: { borderWidth: 1, borderColor: '#ccc', padding: 12, marginBottom: 12, borderRadius: 10 },
+  button: { backgroundColor: '#0068ff', padding: 14, borderRadius: 10, alignItems: 'center' },
+  buttonText: { color: '#fff', textAlign: 'center', fontWeight: 'bold' },
+  link: { marginTop: 16, textAlign: 'center', color: '#0068ff' },
+  forgot: { marginTop: 8, textAlign: 'center', color: '#888', fontSize: 14 }
 });
-
-export default LoginScreen;

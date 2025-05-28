@@ -17,6 +17,12 @@ export default function Footer({ navigation, currentTab }) {
           style={[styles.icon, styles.active]}
         />
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('FriendListRequest')}>
+        <Image
+          source={require('../assets/icons8-add-friend-48.png')}
+          style={[styles.icon, styles.active]}
+        />
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
         <Image
           source={require('../assets/icons8-account-48.png')}

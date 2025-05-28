@@ -13,7 +13,7 @@ export default function ChatListScreen({ navigation }) {
       const res = await axios.get('http://192.168.1.125:3000/api/info-chat-item', {
         headers: {
           // Gắn Authorization nếu có dùng JWT
-          // Authorization: Bearer ${token}
+          // Authorization: `Bearer ${token}`
         }
       });
 

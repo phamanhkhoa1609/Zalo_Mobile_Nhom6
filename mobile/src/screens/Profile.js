@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config';
 import Footer from './Footer';
+import * as ImagePicker from 'expo-image-picker';
 
 export default function ProfileScreen({ navigation }) {
   const [profile, setProfile] = useState(null);
@@ -15,6 +16,7 @@ export default function ProfileScreen({ navigation }) {
   const [newPass, setNewPass] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
   const [loadingChangePass, setLoadingChangePass] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -94,14 +96,108 @@ export default function ProfileScreen({ navigation }) {
     });
   };
 
+  const handlePickAvatar = async () => {
+    if (!editMode) return;
+  
+    // Request permission to access media library
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission.status !== 'granted') {
+      Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh!');
+      return;
+    }
+  
+    // Launch image picker
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Still supported, but check if this causes the warning
+      quality: 0.7,
+      allowsEditing: true, // Optional: allows cropping for better UX
+    });
+  
+    if (result.canceled || !result.assets?.length) {
+      return; // User canceled the picker
+    }
+  
+    setUploadingAvatar(true);
+    try {
+      const picked = result.assets[0];
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+  
+      // Prepare FormData
+      const formData = new FormData();
+      const uriParts = picked.uri.split('.');
+      const extension = uriParts[uriParts.length - 1].toLowerCase();
+      const fileName = picked.fileName || `avatar_${Date.now()}.${extension}`;
+      const mimeType = picked.type || getMimeType(extension);
+  
+      formData.append('avatar', {
+        uri: picked.uri,
+        name: fileName,
+        type: mimeType,
+      });
+  
+      // Log FormData for debugging
+      console.log('FormData:', {
+        uri: picked.uri,
+        name: fileName,
+        type: mimeType,
+      });
+  
+      // Make the upload request
+      const res = await axios.post(`${BASE_URL}/api/profile/avatar`, formData, {
+        headers: {
+          Authorization: `Bearer ${token}`, // Ensure Bearer scheme if required
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 30000, // Add timeout to avoid hanging on network issues
+      });
+  
+      // Update profile with the new avatar URL
+      setEditProfile({ ...editProfile, avatar: res.data.data?.avatar || picked.uri });
+      Alert.alert('Thành công', 'Upload ảnh thành công!');
+    } catch (err) {
+      console.error('Upload error:', err);
+      if (err.response) {
+        console.error('Server response:', err.response.data);
+        Alert.alert('Lỗi', err.response.data?.message || 'Upload ảnh thất bại!');
+      } else if (err.request) {
+        console.error('No response received:', err.request);
+        Alert.alert('Lỗi', 'Không thể kết nối đến server. Vui lòng kiểm tra mạng!');
+      } else {
+        console.error('Error details:', err.message);
+        Alert.alert('Lỗi', 'Upload ảnh thất bại: ' + err.message);
+      }
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+  
+  // Helper function to determine MIME type
+  const getMimeType = (extension) => {
+    switch (extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg'; // Fallback
+    }
+  };
+
   if (loading) return <ActivityIndicator size="large" color="#0068FF" style={{ flex: 1 }} />;
 
   return (
     <View style={styles.container}>
       <View style={styles.content}>
         <Text style={styles.title}>Thông tin tài khoản</Text>
-        <TouchableOpacity>
-          <Image source={{ uri: profile.avatar }} style={styles.avatar} />
+        <TouchableOpacity onPress={handlePickAvatar} disabled={!editMode}>
+          <Image source={{ uri: editMode ? editProfile.avatar : profile.avatar }} style={styles.avatar} />
+          {uploadingAvatar && <ActivityIndicator style={{ position: 'absolute', top: 40, left: 40 }} />}
         </TouchableOpacity>
         {editMode ? (
           <TextInput
@@ -123,7 +219,7 @@ export default function ProfileScreen({ navigation }) {
           </View>
         ) : (
           <TouchableOpacity style={styles.updateBtn} onPress={handleEdit}>
-            <Text style={styles.updateText}>Update</Text>
+            <Text style={styles.updateText}>Chỉnh sửa</Text>
           </TouchableOpacity>
         )}
         <View style={styles.infoBlock}>
@@ -133,7 +229,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.infoValue}>{profile.email}</Text>
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Phone</Text>
+            <Text style={styles.infoLabel}>Số điện thoại</Text>
             {editMode ? (
               <TextInput
                 style={styles.input}
@@ -146,7 +242,7 @@ export default function ProfileScreen({ navigation }) {
             )}
           </View>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Dob</Text>
+            <Text style={styles.infoLabel}>Ngày sinh</Text>
             {editMode ? (
               <TextInput
                 style={styles.input}
@@ -161,40 +257,40 @@ export default function ProfileScreen({ navigation }) {
         </View>
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.changePassBtn} onPress={() => setShowChangePass(true)}>
-            <Text style={styles.changePassText}>Change Password</Text>
+            <Text style={styles.changePassText}>Đổi mật khẩu</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-            <Text style={styles.logoutText}>Logout</Text>
+            <Text style={styles.logoutText}>Đăng xuất</Text>
           </TouchableOpacity>
         </View>
       </View>
       {showChangePass && (
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Change Password</Text>
+            <Text style={styles.modalTitle}>Đổi mật khẩu</Text>
 
-            <Text style={styles.modalLabel}>Current Password:</Text>
+            <Text style={styles.modalLabel}>Mật khẩu hiện tại:</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Enter your current Password"
+              placeholder="Nhập mật khẩu hiện tại"
               secureTextEntry
               value={currentPass}
               onChangeText={setCurrentPass}
             />
 
-            <Text style={styles.modalLabel}>New Password:</Text>
+            <Text style={styles.modalLabel}>Mật khẩu mới :</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Enter your new password"
+              placeholder="Nhập mật khẩu mới"
               secureTextEntry
               value={newPass}
               onChangeText={setNewPass}
             />
 
-            <Text style={styles.modalLabel}>Confirm New Password:</Text>
+            <Text style={styles.modalLabel}>Xác nhận mật khẩu mới:</Text>
             <TextInput
               style={styles.modalInput}
-              placeholder="Confirm your new password"
+              placeholder="Xác nhận mật khẩu mới"
               secureTextEntry
               value={confirmPass}
               onChangeText={setConfirmPass}
@@ -205,7 +301,7 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.saveText}>{loadingChangePass ? 'Saving...' : 'Save'}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.closeBtn} onPress={() => setShowChangePass(false)}>
-                <Text style={styles.closeText}>Close</Text>
+                <Text style={styles.closeText}>Hủy</Text>
               </TouchableOpacity>
             </View>
           </View>

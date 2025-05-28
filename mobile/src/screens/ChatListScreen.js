@@ -560,7 +560,7 @@ const handleSendFriendRequest = async () => {
 
           {foundUser && (
             <TouchableOpacity 
-              style={[styles.createBtn, { marginHorizontal: 16, marginTop: 10 }]}
+              style={styles.sendFriendRequestButton}
               onPress={handleSendFriendRequest}
                disabled={addFriendLoading}
             >
@@ -899,5 +899,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 2,
+  },
+  sendFriendRequestButton: {
+    backgroundColor: '#007AFF',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 16,
   },
 });
