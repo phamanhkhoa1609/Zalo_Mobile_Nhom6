@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput ,Platform} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config';
@@ -97,98 +97,92 @@ export default function ProfileScreen({ navigation }) {
     });
   };
 
-  const handlePickAvatar = async () => {
-    if (!editMode) return;
-  
-    // Request permission to access media library
+const handlePickAvatar = async () => {
+  if (!editMode) return;
+
+  try {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (permission.status !== 'granted') {
       Alert.alert('Lỗi', 'Cần quyền truy cập thư viện ảnh!');
       return;
     }
-  
-    // Launch image picker
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // Still supported, but check if this causes the warning
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
-      allowsEditing: true, // Optional: allows cropping for better UX
+      allowsEditing: true,
     });
-  
+
     if (result.canceled || !result.assets?.length) {
-      return; // User canceled the picker
+      return;
     }
-  
+
     setUploadingAvatar(true);
-    try {
-      const picked = result.assets[0];
-      const token = await AsyncStorage.getItem('token');
-      if (!token) {
-        throw new Error('No authentication token found');
-      }
-  
-      // Prepare FormData
-      const formData = new FormData();
-      const uriParts = picked.uri.split('.');
-      const extension = uriParts[uriParts.length - 1].toLowerCase();
-      const fileName = picked.fileName || `avatar_${Date.now()}.${extension}`;
-      const mimeType = picked.type || getMimeType(extension);
-  
-      formData.append('avatar', {
-        uri: picked.uri,
-        name: fileName,
-        type: mimeType,
-      });
-  
-      // Log FormData for debugging
-      console.log('FormData:', {
-        uri: picked.uri,
-        name: fileName,
-        type: mimeType,
-      });
-  
-      // Make the upload request
-      const res = await axios.post(`${BASE_URL}/api/profile/avatar`, formData, {
-        headers: {
-          Authorization: `Bearer ${token}`, // Ensure Bearer scheme if required
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // Add timeout to avoid hanging on network issues
-      });
-  
-      // Update profile with the new avatar URL
-      setEditProfile({ ...editProfile, avatar: res.data.data?.avatar || picked.uri });
-      Alert.alert('Thành công', 'Upload ảnh thành công!');
-    } catch (err) {
-      console.error('Upload error:', err);
-      if (err.response) {
-        console.error('Server response:', err.response.data);
-        Alert.alert('Lỗi', err.response.data?.message || 'Upload ảnh thất bại!');
-      } else if (err.request) {
-        console.error('No response received:', err.request);
-        Alert.alert('Lỗi', 'Không thể kết nối đến server. Vui lòng kiểm tra mạng!');
-      } else {
-        console.error('Error details:', err.message);
-        Alert.alert('Lỗi', 'Upload ảnh thất bại: ' + err.message);
-      }
-    } finally {
-      setUploadingAvatar(false);
+    const token = await AsyncStorage.getItem('token');
+    if (!token) {
+      throw new Error('Không tìm thấy token xác thực');
     }
-  };
-  
-  // Helper function to determine MIME type
-  const getMimeType = (extension) => {
-    switch (extension.toLowerCase()) {
-      case 'jpg':
-      case 'jpeg':
-        return 'image/jpeg';
-      case 'png':
-        return 'image/png';
-      case 'gif':
-        return 'image/gif';
-      default:
-        return 'image/jpeg'; // Fallback
+
+    const picked = result.assets[0];
+    
+    // Create FormData with proper structure
+    const formData = new FormData();
+    formData.append('avatar', {
+      uri: Platform.OS === 'ios' ? picked.uri.replace('file://', '') : picked.uri,
+      type: 'image/jpeg',
+      name: 'avatar.jpg'
+    });
+
+    // Upload image
+    const response = await fetch(`${BASE_URL}/api/profile/avatar`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token,
+        'Content-Type': 'multipart/form-data',
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error('Upload failed');
     }
-  };
+
+    // Fetch updated profile
+    const profileResponse = await axios.get(`${BASE_URL}/api/profile`, {
+      headers: { Authorization: token }
+    });
+
+    if (profileResponse.data.data) {
+      setProfile(profileResponse.data.data);
+      setEditProfile(profileResponse.data.data);
+      Alert.alert('Thành công', 'Cập nhật ảnh đại diện thành công!');
+    }
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    Alert.alert('Lỗi', 'Không thể tải lên ảnh. Vui lòng thử lại!');
+    // Revert to original avatar
+    setEditProfile({ ...editProfile, avatar: profile.avatar });
+  } finally {
+    setUploadingAvatar(false);
+  }
+};
+
+
+// Helper function to determine MIME type (không thay đổi)
+const getMimeType = (extension) => {
+  switch (extension.toLowerCase()) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'gif':
+      return 'image/gif';
+    default:
+      return 'image/jpeg'; // Fallback
+  }
+};
+  
 
   if (loading) return <ActivityIndicator size="large" color="#0068FF" style={{ flex: 1 }} />;
 
