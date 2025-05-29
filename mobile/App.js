@@ -13,6 +13,8 @@ import OnlineChatScreen from './screens/OnlineChatScreen';
 import ChatDetailScreen from './screens/ChatDetailScreen';
 import Profile from './screens/Profile'
 import FriendListScreen from './screens/FriendListScreen';
+import FriendListRequest from './screens/FriendListRequest';
+import NewsScreen from './screens/NewsScreen';
 
 const Stack = createStackNavigator();
 
@@ -30,6 +32,9 @@ export default function App() {
         <Stack.Screen name="OnlineChat" component={OnlineChatScreen} />
         <Stack.Screen name="Profile" component={Profile} />
         <Stack.Screen name="FriendListScreen" component={FriendListScreen}/>
+        <Stack.Screen name="FriendListRequest" component={FriendListRequest}/>
+        <Stack.Screen name="News" component={NewsScreen} />
+
         { <Stack.Screen name="ChatDetail" component={ChatDetailScreen} /> }
       </Stack.Navigator>
     </NavigationContainer>
