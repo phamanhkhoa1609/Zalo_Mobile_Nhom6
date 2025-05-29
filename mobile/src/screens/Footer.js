@@ -23,6 +23,12 @@ export default function Footer({ navigation, currentTab }) {
           style={[styles.icon, styles.active]}
         />
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => navigation.navigate('News')}>
+        <Image
+          source={require('../assets/icons8-news-48.png')}
+          style={[styles.icon, styles.active]}
+        />
+      </TouchableOpacity>
       <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
         <Image
           source={require('../assets/icons8-account-48.png')}
