@@ -55,20 +55,51 @@ const [voteOptions, setVoteOptions] = useState(['']);
 const [voteEndTime, setVoteEndTime] = useState(null);
 const [isMultipleChoice, setIsMultipleChoice] = useState(false);
 
+
 // Hàm fetch thông tin user
 const fetchUserProfile = async () => {
-  setLoadingProfile(true);
+  if (isGroup) return; // Không hiển thị profile user cho nhóm
+  setLoadingProfile(true); // Bật loading dù không gọi API, để giữ cấu trúc
   try {
-    const token = await AsyncStorage.getItem('token');
-    const res = await axios.get(`${BASE_URL}/api/profile`, {
-      headers: { Authorization: token }
+    // Lấy thông tin user trực tiếp từ state headerInfo
+    // API fetchHeaderInfo đã chạy khi màn hình load
+    const userData = headerInfo;
+
+    if (!userData || Object.keys(userData).length === 0) { // Kiểm tra nếu headerInfo hoàn toàn trống
+       console.warn('⚠️ headerInfo is empty. Cannot display profile modal.');
+       Alert.alert('Thông báo', 'Không thể tải thông tin người dùng.');
+       return; // Không mở modal nếu không có data cơ bản nào
+    }
+
+    // Vẫn log cảnh báo nếu thiếu _id, nhưng không ngăn mở modal
+    if (!userData._id) {
+       console.warn('⚠️ headerInfo is missing _id. Some profile actions might not be available.', userData);
+    }
+
+    console.log('📦 Using user data from headerInfo for profile modal:', userData);
+
+    // Sử dụng dữ liệu có sẵn từ headerInfo để set state userProfile
+    // Các trường thiếu sẽ hiển thị giá trị mặc định (hoặc rỗng)
+    setUserProfile({
+      _id: userData._id || undefined, // Sử dụng _id nếu có, nếu không thì undefined
+      name: userData.name || userData.displayName || 'Không tên',
+      avatar: userData.avatar || userData.photoURL || '',
+      // Các trường chi tiết hơn sẽ chỉ hiển thị nếu có sẵn trong userData từ headerInfo
+      email: userData.email || '',
+      phone: userData.phone || '',
+      dob: userData.dob || '',
+      countCommonGroup: userData.countCommonGroup || 0,
+      // Thêm các trường khác nếu API /info-user trả về chúng
     });
-    setUserProfile(res.data.data);
+
     setShowUserModal(true);
+
   } catch (err) {
-    Alert.alert('Lỗi', 'Không lấy được thông tin user');
+    // Lỗi xảy ra nếu có vấn đề khi truy cập headerInfo hoặc set state (ít khả năng)
+    console.error('❌ Lỗi khi chuẩn bị thông tin user cho modal từ headerInfo:', err);
+    Alert.alert('Lỗi', 'Không thể hiển thị thông tin người dùng.');
   } finally {
-    setLoadingProfile(false);
+    setLoadingProfile(false); // Tắt loading
   }
 };
   // Lấy danh sách tin nhắn và userId

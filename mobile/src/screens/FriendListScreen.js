@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { BASE_URL } from '../config';
 import Footer from './Footer';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function FriendListScreen({ navigation }) {
   const [friends, setFriends] = useState([]);
@@ -83,7 +84,12 @@ export default function FriendListScreen({ navigation }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Danh sách bạn bè</Text>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#222" />
+        </TouchableOpacity>
+        <Text style={styles.title}>Danh sách bạn bè</Text>
+      </View>
       <FlatList
         data={friends}
         keyExtractor={item => item._id}
@@ -97,7 +103,17 @@ export default function FriendListScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  title: { fontSize: 24, fontWeight: 'bold', margin: 16, color: '#222' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  backButton: {
+    marginRight: 12,
+  },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#222' },
   friendCard: {
     flexDirection: 'row',
     alignItems: 'center',
