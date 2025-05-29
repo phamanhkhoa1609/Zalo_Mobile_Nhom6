@@ -124,6 +124,13 @@ const fetchUserProfile = async () => {
     // Khai báo các biến listener ở ngoài hàm init
     let messageListener;
     let incomingCallListener;
+    let connectListener;
+    let disconnectListener;
+    let reconnectListener;
+    let unsendListener;
+    let reactListener;
+    let forwardListener;
+    let pingInterval;
 
     const init = async () => {
       try {
@@ -140,14 +147,64 @@ const fetchUserProfile = async () => {
         const payload = JSON.parse(atob(token.split('.')[1]));
         setUserId(payload.id);
 
-        socket = io(BASE_URL);
-        socket.emit('setup', JSON.stringify(payload.id));
-        socket.emit('join chat', idChatRoom, JSON.stringify(payload.id));
-        
-        // Gán giá trị cho các biến listener
-        messageListener = () => {
-          reloadMessages();
+        // Khởi tạo socket với các options giống web
+        socket = io(BASE_URL, {
+          reconnection: true,
+          reconnectionAttempts: 5,
+          reconnectionDelay: 1000,
+          timeout: 10000,
+          transports: ["websocket", "polling"]
+        });
+
+        // Thiết lập các event listeners
+        connectListener = () => {
+          console.log('Socket connected');
+          socket.emit('setup', JSON.stringify(payload.id));
+          socket.emit('join chat', idChatRoom, JSON.stringify(payload.id));
         };
+
+        disconnectListener = (reason) => {
+          console.log('Socket disconnected:', reason);
+          if (reason === 'io server disconnect') {
+            socket.connect();
+          }
+        };
+
+        reconnectListener = (attemptNumber) => {
+          console.log('Socket reconnecting... Attempt:', attemptNumber);
+        };
+
+        messageListener = (newMessage) => {
+          // Cập nhật trực tiếp state messages thay vì reload
+          setMessages(prevMessages => {
+            // Kiểm tra xem tin nhắn đã tồn tại chưa
+            const exists = prevMessages.some(msg => msg.id === newMessage.id);
+            if (exists) return prevMessages;
+            return [...prevMessages, newMessage];
+          });
+        };
+
+        unsendListener = (data) => {
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === data.id ? { ...msg, unsent: true } : msg
+            )
+          );
+        };
+
+        reactListener = (data) => {
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === data.messageId ? { ...msg, reactions: data.reactions } : msg
+            )
+          );
+        };
+
+        forwardListener = (data) => {
+          // Xử lý tin nhắn được chuyển tiếp
+          setMessages(prevMessages => [...prevMessages, data]);
+        };
+
         incomingCallListener = ({ meetingId, caller, type }) => {
           Alert.alert(
             'Cuộc gọi đến',
@@ -160,11 +217,34 @@ const fetchUserProfile = async () => {
           );
         };
 
+        // Đăng ký các event listeners
+        socket.on('connect', connectListener);
+        socket.on('disconnect', disconnectListener);
+        socket.on('reconnect_attempt', reconnectListener);
         socket.on('message', messageListener);
+        socket.on('unsend message', unsendListener);
+        socket.on('react message', reactListener);
+        socket.on('forward message', forwardListener);
         socket.on('incomingCall', incomingCallListener);
+
+        // Thiết lập ping/pong để giữ kết nối
+        pingInterval = setInterval(() => {
+          if (socket?.connected) {
+            console.log('Sending ping to server...');
+            socket.emit('ping');
+          } else if (socket) {
+            console.log('Socket not connected, reconnecting...');
+            socket.connect();
+          }
+        }, 30000);
+
+        socket.on('pong', () => {
+          console.log('Received pong from server, connection is alive');
+        });
 
       } catch (err) {
         console.warn('❌ Lỗi load tin nhắn:', err.message);
+        Alert.alert('Lỗi', 'Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
       }
     };
 
@@ -173,13 +253,21 @@ const fetchUserProfile = async () => {
     // Cleanup function to remove listeners and disconnect socket
     return () => {
       if (socket) {
+        socket.off('connect', connectListener);
+        socket.off('disconnect', disconnectListener);
+        socket.off('reconnect_attempt', reconnectListener);
         socket.off('message', messageListener);
+        socket.off('unsend message', unsendListener);
+        socket.off('react message', reactListener);
+        socket.off('forward message', forwardListener);
         socket.off('incomingCall', incomingCallListener);
+        socket.off('pong');
+        clearInterval(pingInterval);
         socket.disconnect();
       }
       sound?.unloadAsync?.();
     };
-  }, [idChatRoom, navigation]); // Thêm navigation vào dependencies nếu nó được dùng trong callback
+  }, [idChatRoom, navigation]);
 
   // Lấy thông tin user/group cho header
   // Trong OnlineChatScreen.js
@@ -246,13 +334,40 @@ useEffect(() => {
     if (!content.trim()) return;
     const token = await AsyncStorage.getItem('token');
     const payload = { chatRoomId: idChatRoom, content, type: 'text', reply: '' };
+    
     try {
-      await axios.post(`${BASE_URL}/api/send-message`, { data: payload }, {
+      const res = await axios.post(`${BASE_URL}/api/send-message`, { data: payload }, {
         headers: { Authorization: token }
       });
-      setContent('');
-      reloadMessages();
+
+      if (res.status === 200) {
+        setContent('');
+        
+        // Thêm retry mechanism khi emit socket
+        const emitWithRetry = (retries = 3) => {
+          if (!socket?.connected) {
+            if (retries > 0) {
+              setTimeout(() => emitWithRetry(retries - 1), 1000);
+              return;
+            }
+            Alert.alert('Lỗi', 'Không thể gửi tin nhắn. Vui lòng thử lại sau.');
+            return;
+          }
+
+          try {
+            socket.emit('message', payload, res.data.data._id);
+          } catch (err) {
+            console.error('Socket emit error:', err);
+            if (retries > 0) {
+              setTimeout(() => emitWithRetry(retries - 1), 1000);
+            }
+          }
+        };
+
+        emitWithRetry();
+      }
     } catch (err) {
+      console.error('Send message error:', err);
       Alert.alert('Lỗi', 'Không gửi được tin nhắn');
     }
   };
