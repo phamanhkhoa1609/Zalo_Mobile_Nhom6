@@ -399,24 +399,25 @@ useEffect(() => {
     setLoadingAction(false);
   };
 
-  const handleUnpinPinned = async () => {
-    if (!pinnedMessage?.id) return;
-    setLoadingAction(true);
-    try {
-      const token = await AsyncStorage.getItem('token');
-      console.log('Unpin payload:', pinnedMessage.id);
-      const res = await axios.patch(`${BASE_URL}/unpin-message/${pinnedMessage.id}`, {}, {
-        headers: { Authorization: token }
-      });
-      console.log('Unpin response:', res.data);
-      reloadMessages();
-      Alert.alert('Thành công', 'Đã gỡ ghim tin nhắn!');
-    } catch (err) {
-      console.log('Unpin error:', err?.response?.data || err.message);
-      Alert.alert('Lỗi', 'Không gỡ ghim được tin nhắn');
-    }
-    setLoadingAction(false);
-  };
+const handleUnpinPinned = async () => {
+  if (!pinnedMessage?.id) return;
+  setLoadingAction(true);
+  try {
+    const token = await AsyncStorage.getItem('token');
+    console.log('Unpin token:', token);
+    console.log('Unpin payload:', pinnedMessage.id);
+    const res = await axios.patch(`${BASE_URL}/unpin-message/${pinnedMessage.id}`, {}, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    console.log('Unpin response:', res.data);
+    reloadMessages();
+    Alert.alert('Thành công', 'Đã gỡ ghim tin nhắn!');
+  } catch (err) {
+    console.log('Unpin error:', err?.response?.data || err.message);
+    Alert.alert('Lỗi', 'Không gỡ ghim được tin nhắn');
+  }
+  setLoadingAction(false);
+};
 
   const handleDelete = async () => {
     setLoadingAction(true);
@@ -518,7 +519,8 @@ useEffect(() => {
 
   // ====== HIỂN THỊ TIN NHẮN GHIM Ở ĐẦU ======
   const pinnedMessage = messages.find(msg => msg.isPinned || msg.pin);
-  const normalMessages = messages.filter(msg => !(msg.isPinned || msg.pin));
+  // Sửa lại phần lọc tin nhắn thường - không loại bỏ tin nhắn đã ghim
+  const normalMessages = messages;
 
   const renderItem = ({ item }) => {
     const isSent = item.senderId === userId || item.isSent;
@@ -548,7 +550,7 @@ useEffect(() => {
           </>
         )}
         {/* Hiển thị trạng thái ghim */}
-        {item.isPinned && <Text style={{ color: 'orange', fontWeight: 'bold' }}>Đã ghim</Text>}
+        {item.isPinned && <Text style={{ color: 'orange', fontWeight: 'bold', fontSize: 12 }}>📌 Đã ghim</Text>}
         {/* Hiển thị reaction */}
         {item.reactions && item.reactions.length > 0 && (
           <Text>{item.reactions.map(r => r.emoji).join(' ')}</Text>
